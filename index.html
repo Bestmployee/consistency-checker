@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Consistency Checker</title>
+<meta name="theme-color" content="#16A34A">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header id="app-header">
+  <h1>Consistency Checker</h1>
+  <div class="header-actions">
+    <button id="export-btn">Export</button>
+    <button id="import-btn">Import</button>
+    <input type="file" id="import-input" accept="application/json" hidden>
+  </div>
+</header>
+
+<div id="banner" hidden>
+  <span id="banner-text"></span>
+  <button id="banner-dismiss" aria-label="Dismiss">&times;</button>
+</div>
+
+<main id="calendar"></main>
+
+<div id="toast" hidden></div>
+
+<script src="js/db.js"></script>
+<script src="js/gestures.js"></script>
+<script src="js/calendar.js"></script>
+<script src="js/storage-permission.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
