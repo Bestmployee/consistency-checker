@@ -35,8 +35,9 @@ async function handleDayTap(dateKey, cell) {
   calendar.setCellStatus(cell, status);
 }
 
-function handleDayLongPress() {
-  showToast('Detail logging is coming in a future update.');
+// Normal navigation (not replace) so Android Back returns to the calendar.
+function handleDayLongPress(dateKey) {
+  window.location.href = `detail.html?date=${encodeURIComponent(dateKey)}`;
 }
 
 const calendar = Calendar.create(document.getElementById('calendar'), {
