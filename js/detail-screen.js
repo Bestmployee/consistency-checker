@@ -49,12 +49,19 @@ function makeEntryRow(text) {
   return row;
 }
 
-function makeSection(title, rowTexts, emptyText, addLabel) {
+function makeSection(title, rowTexts, emptyText, addLabel, manageLink) {
   const section = document.createElement('section');
   section.className = 'detail-section';
+  const header = document.createElement('div');
+  header.className = 'detail-section-header';
   const heading = document.createElement('h2');
   heading.textContent = title;
-  section.appendChild(heading);
+  const manage = document.createElement('a');
+  manage.className = 'detail-manage-link';
+  manage.href = manageLink.href;
+  manage.textContent = manageLink.label;
+  header.append(heading, manage);
+  section.appendChild(header);
 
   if (rowTexts.length === 0) {
     const empty = document.createElement('p');
@@ -103,8 +110,11 @@ async function renderDetailPage() {
     }
   }
 
-  container.appendChild(makeSection('Gym', gymRows, 'No gym entries yet.', '+ Add equipment'));
-  container.appendChild(makeSection('Reading', readingRows, 'No reading entries yet.', '+ Add reading'));
+  const manageHref = (type) => `saved-items.html?type=${type}&date=${encodeURIComponent(dateKey)}`;
+  container.appendChild(makeSection('Gym', gymRows, 'No gym entries yet.', '+ Add equipment',
+    { href: manageHref('equipment'), label: 'Manage equipment' }));
+  container.appendChild(makeSection('Reading', readingRows, 'No reading entries yet.', '+ Add reading',
+    { href: manageHref('book'), label: 'Manage books' }));
 }
 
 renderDetailPage();
