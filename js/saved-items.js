@@ -138,7 +138,11 @@ function createPicker(container, { type, onSelect, placeholder = 'Type to search
       list.appendChild(li);
     }
 
-    const result = classifyName(items, text);
+    let result = classifyName(items, text);
+    // The currently selected item is never a conflict with itself. This lets an
+    // existing value that has since been archived stay selected (e.g. when editing),
+    // without making archived items selectable: typing clears the selection.
+    if (result.item && result.item.id === selectedId) result = { status: 'selected' };
     addButton.hidden = result.status !== 'new';
     if (result.status === 'new') addButton.textContent = `+ Add '${result.name}' as new item`;
     message.hidden = result.status !== 'archived';
@@ -180,7 +184,8 @@ function createPicker(container, { type, onSelect, placeholder = 'Type to search
     render();
   }
 
-  // Pre-fills the picker with an existing item (e.g. when editing an entry).
+  // Pre-fills the picker with an existing item (e.g. when editing an entry). The item
+  // may be archived; it stays selected until the owner types or chooses another item.
   async function setSelected(id) {
     selectedId = id;
     await refresh();

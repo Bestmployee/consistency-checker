@@ -45,6 +45,14 @@ const calendar = Calendar.create(document.getElementById('calendar'), {
   onDayLongPress: handleDayLongPress,
 });
 
+// When Back restores this page from the browser's memory (back/forward cache), the
+// cells still show the colours from before leaving, e.g. not a day the Gym section has
+// since marked green. Reload the current month's colours from storage so the display,
+// and the next tap's cycle, match what is saved. The visible month is kept.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) calendar.refresh();
+});
+
 document.getElementById('export-btn').addEventListener('click', () => {
   Backup.exportToFile();
 });

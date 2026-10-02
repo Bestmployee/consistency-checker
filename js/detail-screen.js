@@ -1,6 +1,7 @@
-// Per-day detail page (detail.html?date=YYYY-MM-DD): shows the selected date and
-// read-only Gym and Reading sections listing that day's existing entries.
-// Add/Edit/Delete controls are present but disabled until their workflows are built.
+// Per-day detail page (detail.html?date=YYYY-MM-DD): shows the selected date, the
+// working Gym section (js/gym-section.js) and a read-only Reading section whose
+// Add/Edit/Delete controls stay disabled until the Reading workflow is built.
+// The page redraws itself from storage after every change.
 
 // Parses a "YYYY-MM-DD" string into a local Date using numeric components
 // (never new Date(dateString), which is read as UTC and can shift the day).
@@ -49,9 +50,8 @@ function makeEntryRow(text) {
   return row;
 }
 
-function makeSection(title, rowTexts, emptyText, addLabel, manageLink) {
-  const section = document.createElement('section');
-  section.className = 'detail-section';
+// Section heading plus its "Manage …" link.
+function makeSectionHeader(title, manageLink) {
   const header = document.createElement('div');
   header.className = 'detail-section-header';
   const heading = document.createElement('h2');
@@ -61,7 +61,13 @@ function makeSection(title, rowTexts, emptyText, addLabel, manageLink) {
   manage.href = manageLink.href;
   manage.textContent = manageLink.label;
   header.append(heading, manage);
-  section.appendChild(header);
+  return header;
+}
+
+function makeSection(title, rowTexts, emptyText, addLabel, manageLink) {
+  const section = document.createElement('section');
+  section.className = 'detail-section';
+  section.appendChild(makeSectionHeader(title, manageLink));
 
   if (rowTexts.length === 0) {
     const empty = document.createElement('p');
@@ -79,7 +85,9 @@ function makeSection(title, rowTexts, emptyText, addLabel, manageLink) {
   return section;
 }
 
-async function renderDetailPage() {
+// Draws (or redraws) the page from storage. gymNotice is an optional message shown
+// in the Gym section, e.g. when a save partly failed.
+async function renderDetailPage(gymNotice) {
   const heading = document.getElementById('detail-date');
   const container = document.getElementById('detail');
   const dateKey = new URLSearchParams(window.location.search).get('date');
@@ -98,23 +106,27 @@ async function renderDetailPage() {
   const itemNames = new Map(savedItems.map((item) => [item.id, item.name]));
   const nameFor = (id) => (itemNames.has(id) ? itemNames.get(id) : '(unknown item)');
 
-  const gymRows = [];
   const readingRows = [];
   for (const entry of entries) {
-    if (entry.type === 'gym') {
-      for (const row of entry.equipment || []) {
-        gymRows.push(`${nameFor(row.itemId)}: ${row.sets} sets × ${row.reps} reps`);
-      }
-    } else if (entry.type === 'reading') {
+    if (entry.type === 'reading') {
       readingRows.push(`${nameFor(entry.bookItemId)}: ${entry.pages} pages`);
     }
   }
 
   const manageHref = (type) => `saved-items.html?type=${type}&date=${encodeURIComponent(dateKey)}`;
-  container.appendChild(makeSection('Gym', gymRows, 'No gym entries yet.', '+ Add equipment',
-    { href: manageHref('equipment'), label: 'Manage equipment' }));
-  container.appendChild(makeSection('Reading', readingRows, 'No reading entries yet.', '+ Add reading',
-    { href: manageHref('book'), label: 'Manage books' }));
+  const gymSection = GymSection.create({
+    dateKey,
+    entries,
+    nameFor,
+    header: makeSectionHeader('Gym', { href: manageHref('equipment'), label: 'Manage equipment' }),
+    notice: gymNotice || null,
+    onChanged: (notice) => renderDetailPage(notice),
+  });
+  const readingSection = makeSection('Reading', readingRows, 'No reading entries yet.', '+ Add reading',
+    { href: manageHref('book'), label: 'Manage books' });
+
+  container.innerHTML = '';
+  container.append(gymSection, readingSection);
 }
 
 renderDetailPage();
