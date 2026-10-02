@@ -10,34 +10,14 @@ const GYM_ERRORS = {
   reps: 'Reps must be a whole number greater than 0.',
 };
 
-// "1 set", "3 sets"
-function countLabel(count, singular, plural) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
 // "Bench Press: 3 sets × 10 reps"
 function describeGymRow(name, row) {
-  return `${name}: ${countLabel(row.sets, 'set', 'sets')} × ${countLabel(row.reps, 'rep', 'reps')}`;
-}
-
-// Digits only (leading zeros allowed, e.g. "08" -> 8) and greater than 0; anything else
-// (blank, 0, negatives, decimals, "1e2", letters) returns null. Numbers too large to be
-// stored exactly are also rejected rather than silently rounded.
-function parsePositiveWholeNumber(text) {
-  const trimmed = String(text == null ? '' : text).trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const value = Number(trimmed);
-  return Number.isSafeInteger(value) && value > 0 ? value : null;
-}
-
-// Oldest first: by createdAt, then by id as a stable tie-breaker.
-function compareOldestFirst(a, b) {
-  return (a.createdAt || 0) - (b.createdAt || 0) || a.id - b.id;
+  return `${name}: ${EntryUtils.countLabel(row.sets, 'set', 'sets')} × ${EntryUtils.countLabel(row.reps, 'rep', 'reps')}`;
 }
 
 async function getGymEntries(dateKey) {
   const entries = await ConsistencyDB.getEntriesForDate(dateKey);
-  return entries.filter((entry) => entry.type === 'gym').sort(compareOldestFirst);
+  return entries.filter((entry) => entry.type === 'gym').sort(EntryUtils.compareOldestFirst);
 }
 
 // Re-reads the source entry and checks the row is still the one shown on screen.
@@ -156,8 +136,8 @@ function makeGymForm({ initial, onSave, onCancel }) {
   actions.className = 'gym-form-actions';
   const saveButton = makeGymButton('Save', async () => {
     const itemId = picker.getSelectedId();
-    const setsValue = parsePositiveWholeNumber(sets.input.value);
-    const repsValue = parsePositiveWholeNumber(reps.input.value);
+    const setsValue = EntryUtils.parsePositiveWholeNumber(sets.input.value);
+    const repsValue = EntryUtils.parsePositiveWholeNumber(reps.input.value);
     const messages = [];
     if (itemId == null) messages.push(GYM_ERRORS.equipment);
     if (setsValue === null) messages.push(GYM_ERRORS.sets);
@@ -178,10 +158,10 @@ function makeGymForm({ initial, onSave, onCancel }) {
 }
 
 // Builds the Gym section. rows come from every gym entry for the day (oldest entry first).
-// onChanged(notice) redraws the whole page from storage, optionally showing a notice.
+// onChanged(notice) redraws this section from storage, optionally showing a notice.
 function createGymSection({ dateKey, entries, nameFor, header, notice, onChanged }) {
   const rows = [];
-  for (const entry of entries.filter((e) => e.type === 'gym').sort(compareOldestFirst)) {
+  for (const entry of entries.filter((e) => e.type === 'gym').sort(EntryUtils.compareOldestFirst)) {
     (entry.equipment || []).forEach((row, index) => rows.push({ entryId: entry.id, index, row }));
   }
 
@@ -284,6 +264,4 @@ function createGymSection({ dateKey, entries, nameFor, header, notice, onChanged
 window.GymSection = {
   create: createGymSection,
   describeGymRow,
-  countLabel,
-  parsePositiveWholeNumber,
 };

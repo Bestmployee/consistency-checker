@@ -203,13 +203,17 @@ body {
 
 .gym-section .detail-row-actions button,
 .gym-section > div > button,
-.gym-form-actions button {
+.gym-form-actions button,
+.reading-section .detail-row-actions button,
+.reading-section > div > button,
+.reading-form-actions button {
   min-height: 36px;
   padding: 6px 12px;
   font-size: 0.95rem;
 }
 
-.gym-form {
+.gym-form,
+.reading-form {
   padding: 10px;
   margin: 8px 0;
   border: 1px solid #e5e7eb;
@@ -217,7 +221,9 @@ body {
 }
 
 .gym-form-label,
-.gym-field label {
+.gym-field label,
+.reading-form-label,
+.reading-field label {
   display: block;
   font-size: 0.9rem;
   font-weight: 600;
@@ -233,7 +239,8 @@ body {
   flex: 1;
 }
 
-.gym-number-input {
+.gym-number-input,
+.reading-number-input {
   width: 100%;
   font-size: 1rem;
   padding: 8px 10px;
@@ -242,13 +249,16 @@ body {
 }
 
 .gym-form-errors p,
-.gym-notice {
+.gym-notice,
+.reading-form-errors p,
+.reading-notice {
   color: #B91C1C;
   margin: 6px 0 0;
   font-size: 0.9rem;
 }
 
-.gym-form-actions {
+.gym-form-actions,
+.reading-form-actions {
   display: flex;
   gap: 8px;
   margin-top: 10px;
