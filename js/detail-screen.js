@@ -1,7 +1,7 @@
-// Per-day detail page (detail.html?date=YYYY-MM-DD): shows the selected date, the
-// working Gym section (js/gym-section.js) and a read-only Reading section whose
-// Add/Edit/Delete controls stay disabled until the Reading workflow is built.
-// The page redraws itself from storage after every change.
+// Per-day detail page (detail.html?date=YYYY-MM-DD): shows the selected date and the
+// Gym (js/gym-section.js) and Reading (js/reading-section.js) sections.
+// After a change, only the section that changed is redrawn from storage, so an
+// unfinished form in the other section keeps its typed values.
 
 // Parses a "YYYY-MM-DD" string into a local Date using numeric components
 // (never new Date(dateString), which is read as UTC and can shift the day).
@@ -26,30 +26,6 @@ function formatDateHeading(date) {
   });
 }
 
-function makeDisabledButton(label) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = label;
-  button.disabled = true;
-  return button;
-}
-
-// Builds one entry row: its description text plus disabled Edit/Delete controls.
-function makeEntryRow(text) {
-  const row = document.createElement('li');
-  row.className = 'detail-row';
-  const label = document.createElement('span');
-  label.className = 'detail-row-text';
-  label.textContent = text;
-  const actions = document.createElement('span');
-  actions.className = 'detail-row-actions';
-  actions.appendChild(makeDisabledButton('Edit'));
-  actions.appendChild(makeDisabledButton('Delete'));
-  row.appendChild(label);
-  row.appendChild(actions);
-  return row;
-}
-
 // Section heading plus its "Manage …" link.
 function makeSectionHeader(title, manageLink) {
   const header = document.createElement('div');
@@ -64,30 +40,48 @@ function makeSectionHeader(title, manageLink) {
   return header;
 }
 
-function makeSection(title, rowTexts, emptyText, addLabel, manageLink) {
-  const section = document.createElement('section');
-  section.className = 'detail-section';
-  section.appendChild(makeSectionHeader(title, manageLink));
-
-  if (rowTexts.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'detail-empty';
-    empty.textContent = emptyText;
-    section.appendChild(empty);
-  } else {
-    const list = document.createElement('ul');
-    list.className = 'detail-list';
-    for (const text of rowTexts) list.appendChild(makeEntryRow(text));
-    section.appendChild(list);
-  }
-
-  section.appendChild(makeDisabledButton(addLabel));
-  return section;
+// Reads the day's entries and a name lookup covering all saved items (archived too).
+async function loadDayData(dateKey) {
+  const [entries, savedItems] = await Promise.all([
+    ConsistencyDB.getEntriesForDate(dateKey),
+    ConsistencyDB.getAllSavedItems(),
+  ]);
+  const itemNames = new Map(savedItems.map((item) => [item.id, item.name]));
+  const nameFor = (id) => (itemNames.has(id) ? itemNames.get(id) : '(unknown item)');
+  return { entries, nameFor };
 }
 
-// Draws (or redraws) the page from storage. gymNotice is an optional message shown
-// in the Gym section, e.g. when a save partly failed.
-async function renderDetailPage(gymNotice) {
+const DETAIL_SECTIONS = {
+  gym: { module: () => GymSection, title: 'Gym', itemType: 'equipment', manageLabel: 'Manage equipment' },
+  reading: { module: () => ReadingSection, title: 'Reading', itemType: 'book', manageLabel: 'Manage books' },
+};
+
+// The section elements currently on the page, by kind.
+const detailSectionElements = {};
+
+// Builds one section from fresh storage data. notice is an optional message for it.
+async function buildDetailSection(kind, dateKey, notice) {
+  const config = DETAIL_SECTIONS[kind];
+  const { entries, nameFor } = await loadDayData(dateKey);
+  const href = `saved-items.html?type=${config.itemType}&date=${encodeURIComponent(dateKey)}`;
+  return config.module().create({
+    dateKey,
+    entries,
+    nameFor,
+    header: makeSectionHeader(config.title, { href, label: config.manageLabel }),
+    notice: notice || null,
+    onChanged: (changeNotice) => refreshDetailSection(kind, dateKey, changeNotice),
+  });
+}
+
+// Redraws only one section; the other section (and any open form in it) is untouched.
+async function refreshDetailSection(kind, dateKey, notice) {
+  const fresh = await buildDetailSection(kind, dateKey, notice);
+  detailSectionElements[kind].replaceWith(fresh);
+  detailSectionElements[kind] = fresh;
+}
+
+async function renderDetailPage() {
   const heading = document.getElementById('detail-date');
   const container = document.getElementById('detail');
   const dateKey = new URLSearchParams(window.location.search).get('date');
@@ -99,34 +93,11 @@ async function renderDetailPage(gymNotice) {
   }
   heading.textContent = formatDateHeading(date);
 
-  const [entries, savedItems] = await Promise.all([
-    ConsistencyDB.getEntriesForDate(dateKey),
-    ConsistencyDB.getAllSavedItems(),
-  ]);
-  const itemNames = new Map(savedItems.map((item) => [item.id, item.name]));
-  const nameFor = (id) => (itemNames.has(id) ? itemNames.get(id) : '(unknown item)');
-
-  const readingRows = [];
-  for (const entry of entries) {
-    if (entry.type === 'reading') {
-      readingRows.push(`${nameFor(entry.bookItemId)}: ${entry.pages} pages`);
-    }
+  for (const kind of Object.keys(DETAIL_SECTIONS)) {
+    detailSectionElements[kind] = await buildDetailSection(kind, dateKey, null);
   }
-
-  const manageHref = (type) => `saved-items.html?type=${type}&date=${encodeURIComponent(dateKey)}`;
-  const gymSection = GymSection.create({
-    dateKey,
-    entries,
-    nameFor,
-    header: makeSectionHeader('Gym', { href: manageHref('equipment'), label: 'Manage equipment' }),
-    notice: gymNotice || null,
-    onChanged: (notice) => renderDetailPage(notice),
-  });
-  const readingSection = makeSection('Reading', readingRows, 'No reading entries yet.', '+ Add reading',
-    { href: manageHref('book'), label: 'Manage books' });
-
   container.innerHTML = '';
-  container.append(gymSection, readingSection);
+  container.append(detailSectionElements.gym, detailSectionElements.reading);
 }
 
 renderDetailPage();
