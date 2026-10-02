@@ -201,6 +201,59 @@ body {
   color: #2563EB;
 }
 
+.gym-section .detail-row-actions button,
+.gym-section > div > button,
+.gym-form-actions button {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 0.95rem;
+}
+
+.gym-form {
+  padding: 10px;
+  margin: 8px 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.gym-form-label,
+.gym-field label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.gym-numbers {
+  display: flex;
+  gap: 12px;
+}
+
+.gym-field {
+  flex: 1;
+}
+
+.gym-number-input {
+  width: 100%;
+  font-size: 1rem;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
+
+.gym-form-errors p,
+.gym-notice {
+  color: #B91C1C;
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+}
+
+.gym-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 #manage {
   max-width: 480px;
   margin: 0 auto;
