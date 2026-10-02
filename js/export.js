@@ -96,8 +96,9 @@ function checkTimestamps(record, label) {
   }
 }
 
-// Days, for both versions. Version 1 keeps Stage 1's tolerance (extra fields kept,
-// updatedAt not checked); version 2 allows only known fields and checks updatedAt if present.
+// Days, for both versions. Version 1 keeps Stage 1's tolerance (extra fields and any
+// updatedAt accepted; see canonicalV1Day); version 2 allows only known fields and
+// checks updatedAt if present.
 function validateDays(days, strict) {
   const seenDates = new Set();
   days.forEach((day, i) => {
@@ -112,6 +113,15 @@ function validateDays(days, strict) {
     if (seenDates.has(day.date)) rejectBackup(`the date ${day.date} appears more than once.`);
     seenDates.add(day.date);
   });
+}
+
+// A version 1 file is accepted with Stage 1's tolerance, but only the fields a
+// version 2 backup allows are stored, so the data can later be exported and
+// re-imported: date and status always, updatedAt only if it is a valid timestamp.
+function canonicalV1Day(day) {
+  const record = { date: day.date, status: day.status };
+  if (isNonNegativeSafeInteger(day.updatedAt)) record.updatedAt = day.updatedAt;
+  return record;
 }
 
 // Returns a Map of id -> saved item, used to check entry references.
@@ -188,7 +198,7 @@ function validateBackup(payload) {
   if (version === 1) {
     if (!Array.isArray(payload.days)) throw new Error(NOT_A_BACKUP);
     validateDays(payload.days, false);
-    return { schemaVersion: 1, days: payload.days, entries: [], savedItems: [] };
+    return { schemaVersion: 1, days: payload.days.map(canonicalV1Day), entries: [], savedItems: [] };
   }
 
   if (version === 2) {
