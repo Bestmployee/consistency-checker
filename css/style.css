@@ -333,6 +333,12 @@ body {
   gap: 8px;
 }
 
+/* Archived rows have three buttons; let them wrap on narrow screens. */
+.manage-row-line .detail-row-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .manage-archived-tag {
   font-size: 0.75rem;
   color: #6b7280;

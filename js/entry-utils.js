@@ -20,8 +20,18 @@ function compareOldestFirst(a, b) {
   return (a.createdAt || 0) - (b.createdAt || 0) || a.id - b.id;
 }
 
+// Throws if any of the given saved items was permanently deleted: entries that use one are
+// read-only, and new or edited entries can't choose one (e.g. from a page opened earlier).
+async function checkItemsNotDeleted(...ids) {
+  for (const id of ids) {
+    const item = await ConsistencyDB.getSavedItem(id);
+    if (item && ConsistencyDB.isDeletedSavedItem(item)) throw new Error('That item was permanently deleted.');
+  }
+}
+
 window.EntryUtils = {
   countLabel,
   parsePositiveWholeNumber,
   compareOldestFirst,
+  checkItemsNotDeleted,
 };

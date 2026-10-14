@@ -1,6 +1,7 @@
 // Saved-item management page (saved-items.html?type=equipment|book&date=YYYY-MM-DD):
 // find or create items with the shared picker, rename items inline, and archive them.
-// Archived items stay listed (marked Archived) but never appear in picker suggestions.
+// Archived items stay listed (marked Archived) but never appear in picker suggestions;
+// they can be restored or permanently deleted. Permanently deleted items aren't listed.
 
 const MANAGE_TITLES = { equipment: 'Equipment', book: 'Books' };
 
@@ -11,6 +12,8 @@ const manageDate = manageParams.get('date');
 let managePicker = null;
 let editingItemId = null;
 let highlightedItemId = null;
+// { id, text }: a message shown under one row after its Restore or Delete permanently failed.
+let rowError = null;
 
 function makeButton(label, onClick) {
   const button = document.createElement('button');
@@ -74,6 +77,7 @@ function makeItemRow(item) {
   const actions = document.createElement('span');
   actions.className = 'detail-row-actions';
   actions.appendChild(makeButton('Rename', async () => {
+    rowError = null;
     editingItemId = item.id;
     await renderItemList();
     const input = document.querySelector('.manage-rename-input');
@@ -83,12 +87,49 @@ function makeItemRow(item) {
     actions.appendChild(makeButton('Archive', async () => {
       if (await SavedItems.confirmAndArchiveSavedItem(item)) await reloadManagePage();
     }));
+  } else {
+    actions.appendChild(makeButton('Restore', async () => {
+      const result = await runRowAction(() => SavedItems.restoreSavedItem(item));
+      if (!result.ok) {
+        rowError = { id: item.id, text: result.message };
+        await renderItemList();
+        return;
+      }
+      await reloadManagePage();
+    }));
+    actions.appendChild(makeButton('Delete permanently', async () => {
+      const result = await runRowAction(async () => ({ ok: await SavedItems.confirmAndPermanentlyDeleteSavedItem(item) }));
+      if (result.message) {
+        rowError = { id: item.id, text: result.message };
+        await renderItemList();
+        return;
+      }
+      if (result.ok) await reloadManagePage();
+    }));
   }
   const line = document.createElement('div');
   line.className = 'manage-row-line';
   line.append(label, actions);
   row.appendChild(line);
+  if (rowError && rowError.id === item.id) {
+    const error = document.createElement('p');
+    error.className = 'manage-error';
+    error.setAttribute('role', 'alert');
+    error.textContent = rowError.text;
+    row.appendChild(error);
+  }
   return row;
+}
+
+// Runs a row action, turning a storage failure into { ok: false, message }. Any earlier
+// row message is cleared first.
+async function runRowAction(action) {
+  rowError = null;
+  try {
+    return await action();
+  } catch (err) {
+    return { ok: false, message: `Couldn't save: ${err.message}` };
+  }
 }
 
 async function renderItemList() {

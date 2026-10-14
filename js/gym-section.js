@@ -32,6 +32,7 @@ async function getStoredGymRow(dateKey, entryId, index, expected) {
 
 // Appends a row to the oldest gym entry for the day, or creates the day's gym entry.
 async function addGymRow(dateKey, row) {
+  await EntryUtils.checkItemsNotDeleted(row.itemId);
   const [oldest] = await getGymEntries(dateKey);
   if (oldest) {
     await ConsistencyDB.updateEntry({ ...oldest, equipment: [...oldest.equipment, row] });
@@ -40,9 +41,11 @@ async function addGymRow(dateKey, row) {
   }
 }
 
-// Replaces one row in its own entry, keeping its position.
+// Replaces one row in its own entry, keeping its position. A row using a permanently
+// deleted item is read-only, and a row can't be changed to use one.
 async function updateGymRow(dateKey, entryId, index, expected, row) {
   const entry = await getStoredGymRow(dateKey, entryId, index, expected);
+  await EntryUtils.checkItemsNotDeleted(expected.itemId, row.itemId);
   const equipment = entry.equipment.slice();
   equipment[index] = row;
   await ConsistencyDB.updateEntry({ ...entry, equipment });
@@ -159,7 +162,8 @@ function makeGymForm({ initial, onSave, onCancel }) {
 
 // Builds the Gym section. rows come from every gym entry for the day (oldest entry first).
 // onChanged(notice) redraws this section from storage, optionally showing a notice.
-function createGymSection({ dateKey, entries, nameFor, header, notice, onChanged }) {
+// isDeletedItem(id) is true for permanently deleted items; their rows have Delete but no Edit.
+function createGymSection({ dateKey, entries, nameFor, isDeletedItem, header, notice, onChanged }) {
   const rows = [];
   for (const entry of entries.filter((e) => e.type === 'gym').sort(EntryUtils.compareOldestFirst)) {
     (entry.equipment || []).forEach((row, index) => rows.push({ entryId: entry.id, index, row }));
@@ -235,10 +239,10 @@ function createGymSection({ dateKey, entries, nameFor, header, notice, onChanged
           label.textContent = describeGymRow(nameFor(r.row.itemId), r.row);
           const actions = document.createElement('span');
           actions.className = 'detail-row-actions';
-          actions.append(
-            makeGymButton('Edit', () => { openForm = { entryId: r.entryId, index: r.index }; render(); }, busy),
-            makeGymButton('Delete', () => deleteRow(r), busy),
-          );
+          if (!isDeletedItem(r.row.itemId)) {
+            actions.append(makeGymButton('Edit', () => { openForm = { entryId: r.entryId, index: r.index }; render(); }, busy));
+          }
+          actions.append(makeGymButton('Delete', () => deleteRow(r), busy));
           li.append(label, actions);
         }
         list.appendChild(li);
