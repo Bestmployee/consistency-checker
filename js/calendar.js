@@ -69,7 +69,10 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
 
     const monthStartKey = ConsistencyDB.toDateKey(new Date(currentYear, currentMonth, 1));
     const monthEndKey = ConsistencyDB.toDateKey(new Date(currentYear, currentMonth, daysInMonth));
-    const statuses = await ConsistencyDB.getDaysInRange(monthStartKey, monthEndKey);
+    const [statuses, readingDates] = await Promise.all([
+      ConsistencyDB.getDaysInRange(monthStartKey, monthEndKey),
+      ConsistencyDB.getReadingDatesInRange(monthStartKey, monthEndKey),
+    ]);
 
     for (let i = 0; i < totalCells; i++) {
       const dayNum = i - startWeekday + 1;
@@ -86,6 +89,8 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
         const status = statuses[dateKey]; // undefined | "green" | "red"
         cell.className = 'cal-cell cal-day' + (status ? ` cal-${status}` : '');
         if (dateKey === todayKey) cell.classList.add('cal-today');
+        // Reading marker: shown if the day has any Reading entry, independent of the Gym colour.
+        if (readingDates.has(dateKey)) cell.classList.add('cal-reading');
         cell.textContent = String(dayNum);
         cell.dataset.date = dateKey;
 
@@ -99,7 +104,8 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
     }
   }
 
-  // Updates a single cell's visual state without re-rendering the whole grid.
+  // Updates a single cell's Gym colour without re-rendering the whole grid
+  // (the Reading marker is left as it is).
   function setCellStatus(cell, status) {
     cell.classList.remove('cal-green', 'cal-red');
     if (status) cell.classList.add(`cal-${status}`);

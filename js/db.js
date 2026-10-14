@@ -169,6 +169,21 @@ async function deleteEntry(id) {
   });
 }
 
+// Returns a Set of the dates in [startKey, endKey] inclusive that have at least one
+// Reading entry (used for the calendar's Reading marker).
+async function getReadingDatesInRange(startKey, endKey) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_ENTRIES, 'readonly');
+    const range = IDBKeyRange.bound(startKey, endKey);
+    const request = tx.objectStore(STORE_ENTRIES).index('date').getAll(range);
+    request.onsuccess = () => {
+      resolve(new Set(request.result.filter((entry) => entry.type === 'reading').map((entry) => entry.date)));
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 async function getAllEntries() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -331,6 +346,7 @@ window.ConsistencyDB = {
   addEntry,
   updateEntry,
   deleteEntry,
+  getReadingDatesInRange,
   getAllEntries,
   getSavedItems,
   addSavedItem,

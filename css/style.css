@@ -90,6 +90,7 @@ body {
 }
 
 .cal-cell {
+  position: relative;
   aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
@@ -122,6 +123,20 @@ body {
   background: #F87171;
   color: #000000;
   font-weight: 700;
+}
+
+/* Reading marker: one black stripe on the left of any day with a Reading entry,
+   over any Gym colour. Clear of the centred day number; never catches taps. */
+.cal-day.cal-reading::before {
+  content: '';
+  position: absolute;
+  left: 15%;
+  top: 10%;
+  bottom: 10%;
+  width: 3px;
+  border-radius: 2px;
+  background: #000000;
+  pointer-events: none;
 }
 
 #detail-header {
