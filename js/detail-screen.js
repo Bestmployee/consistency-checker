@@ -40,15 +40,19 @@ function makeSectionHeader(title, manageLink) {
   return header;
 }
 
-// Reads the day's entries and a name lookup covering all saved items (archived too).
+// Reads the day's entries and a name lookup covering all saved items (archived and
+// permanently deleted too, so past entries keep their names), plus which items are
+// permanently deleted (entries using them are read-only).
 async function loadDayData(dateKey) {
   const [entries, savedItems] = await Promise.all([
     ConsistencyDB.getEntriesForDate(dateKey),
     ConsistencyDB.getAllSavedItems(),
   ]);
   const itemNames = new Map(savedItems.map((item) => [item.id, item.name]));
+  const deletedIds = new Set(savedItems.filter(ConsistencyDB.isDeletedSavedItem).map((item) => item.id));
   const nameFor = (id) => (itemNames.has(id) ? itemNames.get(id) : '(unknown item)');
-  return { entries, nameFor };
+  const isDeletedItem = (id) => deletedIds.has(id);
+  return { entries, nameFor, isDeletedItem };
 }
 
 const DETAIL_SECTIONS = {
@@ -62,12 +66,13 @@ const detailSectionElements = {};
 // Builds one section from fresh storage data. notice is an optional message for it.
 async function buildDetailSection(kind, dateKey, notice) {
   const config = DETAIL_SECTIONS[kind];
-  const { entries, nameFor } = await loadDayData(dateKey);
+  const { entries, nameFor, isDeletedItem } = await loadDayData(dateKey);
   const href = `saved-items.html?type=${config.itemType}&date=${encodeURIComponent(dateKey)}`;
   return config.module().create({
     dateKey,
     entries,
     nameFor,
+    isDeletedItem,
     header: makeSectionHeader(config.title, { href, label: config.manageLabel }),
     notice: notice || null,
     onChanged: (changeNotice) => refreshDetailSection(kind, dateKey, changeNotice),

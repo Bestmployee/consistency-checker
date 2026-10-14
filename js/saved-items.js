@@ -1,5 +1,6 @@
 // Shared saved-item system for equipment and books: name tidying/matching,
-// explicit creation, rename, archive, and a reusable picker component.
+// explicit creation, rename, archive, restore, permanent delete, and a reusable picker component.
+// Permanently deleted items are never loaded here, so they never block a name.
 // Used by the saved-items management page and by the Gym/Reading entry workflows,
 // so none of them implement their own matching or creation logic.
 
@@ -86,6 +87,45 @@ async function confirmAndArchiveSavedItem(item) {
   );
   if (!confirmed) return false;
   await ConsistencyDB.archiveSavedItem(item.id);
+  return true;
+}
+
+// Returns an archived item to active. Names stay unique among all items of the type that
+// aren't permanently deleted (active or archived), so if another such item has the same
+// name (possible only through imported data) the item stays archived.
+// Resolves { ok: true } or { ok: false, message }.
+async function restoreSavedItem(item) {
+  const result = classifyName(await getItemsOfType(item.type), item.name, item.id);
+  if (result.status !== 'new') {
+    return { ok: false, message: `Can't restore: another item is already named '${tidyName(item.name)}'. Rename one of the items first.` };
+  }
+  await ConsistencyDB.restoreSavedItem(item.id);
+  return { ok: true };
+}
+
+// Shows how many entries use the archived item and what permanent deletion means, asks
+// for confirmation, then permanently deletes it. Resolves true if deleted, false if cancelled.
+async function confirmAndPermanentlyDeleteSavedItem(item) {
+  const count = await ConsistencyDB.getEntryCountForItem(item.id);
+  const kind = item.type === 'book' ? 'books' : 'equipment';
+  const values = item.type === 'book' ? 'pages read' : 'sets and reps';
+  let usage = "It isn't used in any entries.";
+  if (count === 1) {
+    usage = `It is used in 1 entry. That past entry will stay in your history, still showing '${item.name}' and its ${values}, but it can no longer be edited — only deleted.`;
+  } else if (count > 1) {
+    usage = `It is used in ${count} entries. Those past entries will stay in your history, still showing '${item.name}' and their ${values}, but they can no longer be edited — only deleted.`;
+  }
+  const confirmed = window.confirm([
+    `Permanently delete '${item.name}'?`,
+    '',
+    `This can't be undone. '${item.name}' will be removed from your saved ${kind} for good and can't be restored.`,
+    '',
+    usage,
+    '',
+    `You can later create a new item called '${item.name}'; it will be a separate, unrelated item.`,
+  ].join('\n'));
+  if (!confirmed) return false;
+  await ConsistencyDB.permanentlyDeleteSavedItem(item.id);
   return true;
 }
 
@@ -209,5 +249,7 @@ window.SavedItems = {
   createSavedItem,
   renameSavedItem,
   confirmAndArchiveSavedItem,
+  restoreSavedItem,
+  confirmAndPermanentlyDeleteSavedItem,
   createPicker,
 };

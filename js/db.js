@@ -3,7 +3,10 @@
 // Unmarked days simply have no record.
 // 'entries' record shape (v2): { id, date: "YYYY-MM-DD", type: "gym" | "reading", createdAt, updatedAt,
 //   equipment: [{ itemId, sets, reps }, ...] (gym) | bookItemId, pages (reading) }
-// 'savedItems' record shape (v2): { id, type: "equipment" | "book", name, archived, photo: null, createdAt, updatedAt }
+// 'savedItems' record shape (v2): { id, type: "equipment" | "book", name, archived, photo: null, createdAt, updatedAt,
+//   deletedAt? }
+//   active: archived false. archived: archived true. permanently deleted: archived true plus
+//   deletedAt (epoch ms); the record is kept so past entries still show its name.
 
 const DB_NAME = 'consistencyCheckerDB';
 const DB_VERSION = 2;
@@ -178,14 +181,21 @@ async function getAllEntries() {
 
 // --- Saved items (equipment and books) ---
 
-// Returns saved items of one type; archived items are excluded unless includeArchived is true.
-async function getSavedItems(type, { includeArchived = false } = {}) {
+function isDeletedSavedItem(item) {
+  return item.deletedAt != null;
+}
+
+// Returns saved items of one type; archived items are excluded unless includeArchived is true,
+// and permanently deleted items unless includeDeleted is true.
+async function getSavedItems(type, { includeArchived = false, includeDeleted = false } = {}) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_SAVED_ITEMS, 'readonly');
     const request = tx.objectStore(STORE_SAVED_ITEMS).index('type').getAll(type);
     request.onsuccess = () => {
-      resolve(includeArchived ? request.result : request.result.filter((item) => !item.archived));
+      resolve(request.result.filter((item) =>
+        (includeArchived || !item.archived) && (includeDeleted || !isDeletedSavedItem(item))
+      ));
     };
     request.onerror = () => reject(request.error);
   });
@@ -205,22 +215,31 @@ async function addSavedItem(type, name) {
 }
 
 // Reads and rewrites one saved item in a single transaction, applying the changes and refreshing updatedAt.
-async function modifySavedItem(id, changes) {
+// Permanently deleted items are never changed. allowed(item), if given, must accept the stored
+// item's current state, so a stale screen can't apply an action the item no longer allows.
+async function modifySavedItem(id, changes, allowed) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_SAVED_ITEMS, 'readwrite');
     const store = tx.objectStore(STORE_SAVED_ITEMS);
     const request = store.get(id);
+    let refusal = null;
     request.onsuccess = () => {
-      if (!request.result) {
+      const item = request.result;
+      if (!item) refusal = new Error(`Saved item ${id} not found`);
+      else if (isDeletedSavedItem(item)) refusal = new Error('That item was permanently deleted.');
+      else if (allowed && !allowed(item)) refusal = new Error('That item changed since the page was opened.');
+      if (refusal) {
         tx.abort();
         return;
       }
-      store.put({ ...request.result, ...changes, updatedAt: Date.now() });
+      const now = Date.now();
+      const resolvedChanges = typeof changes === 'function' ? changes(now) : changes;
+      store.put({ ...item, ...resolvedChanges, updatedAt: now });
     };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error(`Saved item ${id} not found`));
+    tx.onabort = () => reject(refusal || tx.error);
   });
 }
 
@@ -230,6 +249,28 @@ async function updateSavedItem(id, { name }) {
 
 async function archiveSavedItem(id) {
   return modifySavedItem(id, { archived: true });
+}
+
+// Only an archived item can be restored.
+async function restoreSavedItem(id) {
+  return modifySavedItem(id, { archived: false }, (item) => item.archived);
+}
+
+// Only an archived item can be permanently deleted. The record is kept (archived, with
+// deletedAt set) so past entries still show its name; it is hidden everywhere else.
+async function permanentlyDeleteSavedItem(id) {
+  return modifySavedItem(id, (now) => ({ archived: true, deletedAt: now }), (item) => item.archived);
+}
+
+// Resolves with the saved item record (any state), or null if there is none.
+async function getSavedItem(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SAVED_ITEMS, 'readonly');
+    const request = tx.objectStore(STORE_SAVED_ITEMS).get(id);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
 }
 
 // Counts entries that reference the item (a Gym entry's equipment rows or a Reading entry's book).
@@ -295,6 +336,10 @@ window.ConsistencyDB = {
   addSavedItem,
   updateSavedItem,
   archiveSavedItem,
+  restoreSavedItem,
+  permanentlyDeleteSavedItem,
+  getSavedItem,
+  isDeletedSavedItem,
   getEntryCountForItem,
   getAllSavedItems,
   replaceAllData,

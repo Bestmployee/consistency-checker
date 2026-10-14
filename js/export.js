@@ -1,14 +1,16 @@
 // Export/import of all app data as a JSON backup file.
-// Export writes schema version 2: { schemaVersion, exportedAt, days, entries, savedItems }.
-// Import accepts schema version 1 (Stage 1 backups: days only) and version 2. The whole
+// Export writes schema version 3: { schemaVersion, exportedAt, days, entries, savedItems }.
+// Version 3 is version 2 plus an optional deletedAt on saved items (permanently deleted
+// items, kept so past entries still show their names).
+// Import accepts schema version 1 (Stage 1 backups: days only), version 2 and version 3. The whole
 // file is validated before anything is written; only after the owner confirms the counts
 // are all three stores replaced, in one atomic transaction (ConsistencyDB.replaceAllData).
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const NOT_A_BACKUP = "That file doesn't look like a Consistency Checker backup.";
 
-// Schema version 2 is strict: these are the only fields allowed.
+// Schema versions 2 and 3 are strict: these are the only fields allowed.
 const V2_FIELDS = {
   backup: ['schemaVersion', 'exportedAt', 'days', 'entries', 'savedItems'],
   day: ['date', 'status', 'updatedAt'],
@@ -17,6 +19,9 @@ const V2_FIELDS = {
   gymRow: ['itemId', 'sets', 'reps'],
   reading: ['id', 'date', 'type', 'bookItemId', 'pages', 'createdAt', 'updatedAt'],
 };
+
+// Version 3 allows exactly the version 2 fields, plus deletedAt on saved items.
+const V3_SAVED_ITEM_FIELDS = [...V2_FIELDS.savedItem, 'deletedAt'];
 
 function todayFilenameSuffix() {
   const d = new Date();
@@ -124,13 +129,15 @@ function canonicalV1Day(day) {
   return record;
 }
 
-// Returns a Map of id -> saved item, used to check entry references.
-function validateSavedItems(savedItems) {
+// Returns a Map of id -> saved item, used to check entry references. allowDeleted (version 3)
+// accepts deletedAt, which marks a permanently deleted item; such an item must be archived.
+// Entries may refer to permanently deleted items.
+function validateSavedItems(savedItems, allowDeleted) {
   const itemsById = new Map();
   savedItems.forEach((item, i) => {
     let label = `saved item ${i + 1}`;
     if (!isPlainObject(item)) rejectBackup(`${label} is not a valid saved-item record.`);
-    checkOnlyFields(item, V2_FIELDS.savedItem, label);
+    checkOnlyFields(item, allowDeleted ? V3_SAVED_ITEM_FIELDS : V2_FIELDS.savedItem, label);
     if (!isPositiveSafeInteger(item.id)) rejectBackup(`${label} has an invalid id.`);
     label = `saved item ${i + 1} (id ${item.id})`;
     if (itemsById.has(item.id)) rejectBackup(`saved item id ${item.id} appears more than once.`);
@@ -140,6 +147,10 @@ function validateSavedItems(savedItems) {
     if (typeof item.archived !== 'boolean') rejectBackup(`${label} has an invalid archived value.`);
     if (item.photo !== null) rejectBackup(`${label} has a photo value, which this version doesn't support.`);
     checkTimestamps(item, label);
+    if (hasField(item, 'deletedAt')) {
+      if (!isNonNegativeSafeInteger(item.deletedAt)) rejectBackup(`${label} has an invalid deletedAt.`);
+      if (item.archived !== true) rejectBackup(`${label} is permanently deleted but not archived.`);
+    }
     itemsById.set(item.id, item);
   });
   return itemsById;
@@ -201,15 +212,15 @@ function validateBackup(payload) {
     return { schemaVersion: 1, days: payload.days.map(canonicalV1Day), entries: [], savedItems: [] };
   }
 
-  if (version === 2) {
+  if (version === 2 || version === 3) {
     checkOnlyFields(payload, V2_FIELDS.backup, 'the backup');
     for (const list of ['days', 'entries', 'savedItems']) {
       if (!Array.isArray(payload[list])) rejectBackup(`"${list}" is missing or is not a list.`);
     }
     validateDays(payload.days, true);
-    const itemsById = validateSavedItems(payload.savedItems);
+    const itemsById = validateSavedItems(payload.savedItems, version === 3);
     validateEntries(payload.entries, itemsById);
-    return { schemaVersion: 2, days: payload.days, entries: payload.entries, savedItems: payload.savedItems };
+    return { schemaVersion: version, days: payload.days, entries: payload.entries, savedItems: payload.savedItems };
   }
 
   throw new Error(`This backup was made by a newer or unknown version of the app (schema version ${version}) and can't be imported.`);
@@ -232,16 +243,19 @@ function backupCount(count, singular, plural) {
 }
 
 function confirmationMessage(backup) {
+  const deletedCount = backup.savedItems.filter((item) => hasField(item, 'deletedAt')).length;
   const lines = [
     'Replace ALL current data with this backup?',
     '',
     'The backup contains:',
     `• ${backupCount(backup.days.length, 'marked day', 'marked days')}`,
     `• ${backupCount(backup.entries.length, 'entry', 'entries')}`,
-    `• ${backupCount(backup.savedItems.length, 'saved item', 'saved items')}`,
-    '',
-    "Everything currently in the app will be replaced by the backup. This can't be undone.",
+    `• ${backupCount(backup.savedItems.length - deletedCount, 'saved item', 'saved items')}`,
   ];
+  if (deletedCount > 0) {
+    lines.push(`• ${backupCount(deletedCount, 'permanently deleted item', 'permanently deleted items')} (kept for past history)`);
+  }
+  lines.push('', "Everything currently in the app will be replaced by the backup. This can't be undone.");
   if (backup.schemaVersion === 1) {
     lines.push('', 'This is an older backup without gym/reading details, so all current entries and saved items will be removed.');
   }

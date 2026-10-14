@@ -25,11 +25,14 @@ async function getStoredReadingEntry(dateKey, expected) {
 
 // Every add creates a new, separate reading entry.
 async function addReadingEntry(dateKey, { bookItemId, pages }) {
+  await EntryUtils.checkItemsNotDeleted(bookItemId);
   await ConsistencyDB.addEntry({ date: dateKey, type: 'reading', bookItemId, pages });
 }
 
+// An entry using a permanently deleted book is read-only, and an entry can't be changed to use one.
 async function updateReadingEntry(dateKey, expected, { bookItemId, pages }) {
   const entry = await getStoredReadingEntry(dateKey, expected);
+  await EntryUtils.checkItemsNotDeleted(expected.bookItemId, bookItemId);
   await ConsistencyDB.updateEntry({ ...entry, bookItemId, pages });
 }
 
@@ -119,7 +122,8 @@ function makeReadingForm({ initial, onSave, onCancel }) {
 
 // Builds the Reading section from the day's entries (reading entries oldest first).
 // onChanged(notice) redraws this section from storage, optionally showing a notice.
-function createReadingSection({ dateKey, entries, nameFor, header, notice, onChanged }) {
+// isDeletedItem(id) is true for permanently deleted books; their entries have Delete but no Edit.
+function createReadingSection({ dateKey, entries, nameFor, isDeletedItem, header, notice, onChanged }) {
   const readings = entries.filter((e) => e.type === 'reading').sort(EntryUtils.compareOldestFirst);
 
   const section = document.createElement('section');
@@ -185,10 +189,10 @@ function createReadingSection({ dateKey, entries, nameFor, header, notice, onCha
           label.textContent = describeReadingEntry(nameFor(entry.bookItemId), entry);
           const actions = document.createElement('span');
           actions.className = 'detail-row-actions';
-          actions.append(
-            makeReadingButton('Edit', () => { openForm = entry.id; render(); }, busy),
-            makeReadingButton('Delete', () => confirmAndDelete(entry), busy),
-          );
+          if (!isDeletedItem(entry.bookItemId)) {
+            actions.append(makeReadingButton('Edit', () => { openForm = entry.id; render(); }, busy));
+          }
+          actions.append(makeReadingButton('Delete', () => confirmAndDelete(entry), busy));
           li.append(label, actions);
         }
         list.appendChild(li);
