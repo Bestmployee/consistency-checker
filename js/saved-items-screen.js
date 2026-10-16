@@ -146,7 +146,7 @@ function appendPhotoButtons(actions, item) {
   if (hasPhoto) {
     const remove = makeButton('Remove photo', async () => {
       if (!window.confirm('Remove this photo?')) return;
-      await finishPhotoAction(item.id, Photo.removePhoto(item.id));
+      await runPhotoAction(item.id, () => Photo.removePhoto(item.id));
     });
     remove.disabled = busy;
     actions.appendChild(remove);
@@ -157,18 +157,19 @@ function appendPhotoButtons(actions, item) {
 async function saveChosenPhoto(file) {
   const itemId = photoTargetId;
   photoTargetId = null;
-  if (itemId == null || photoBusyIds.has(itemId)) return;
+  if (itemId == null) return;
+  await runPhotoAction(itemId, () => Photo.savePhotoFromFile(itemId, file));
+}
+
+// Marks the row busy and redraws it (photo buttons disabled, "Saving photo…") before the
+// photo work starts, so no second photo action can begin on that row until it finishes.
+// action() resolves { ok: true } or { ok: false, message }.
+async function runPhotoAction(itemId, action) {
+  if (photoBusyIds.has(itemId)) return;
   photoBusyIds.add(itemId);
   rowError = null;
   await renderItemList();
-  const work = Photo.savePhotoFromFile(itemId, file);
-  await finishPhotoAction(itemId, work);
-}
-
-async function finishPhotoAction(itemId, work) {
-  photoBusyIds.add(itemId);
-  rowError = null;
-  const result = await work;
+  const result = await action();
   photoBusyIds.delete(itemId);
   if (!result.ok) rowError = { id: itemId, text: result.message };
   await reloadManagePage();
