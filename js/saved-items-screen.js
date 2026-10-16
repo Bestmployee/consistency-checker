@@ -2,6 +2,7 @@
 // find or create items with the shared picker, rename items inline, and archive them.
 // Archived items stay listed (marked Archived) but never appear in picker suggestions;
 // they can be restored or permanently deleted. Permanently deleted items aren't listed.
+// Equipment rows show a 64×64 photo slot; active equipment can add, replace or remove its photo.
 
 const MANAGE_TITLES = { equipment: 'Equipment', book: 'Books' };
 
@@ -12,8 +13,13 @@ const manageDate = manageParams.get('date');
 let managePicker = null;
 let editingItemId = null;
 let highlightedItemId = null;
-// { id, text }: a message shown under one row after its Restore or Delete permanently failed.
+// { id, text }: a message shown under one row after one of its actions failed.
 let rowError = null;
+const showPhotos = manageType === 'equipment';
+const listThumbUrls = showPhotos ? Photo.createThumbUrls() : null;
+let photoInput = null;
+let photoTargetId = null; // the item the image chooser was opened for
+const photoBusyIds = new Set(); // items whose photo is being saved
 
 function makeButton(label, onClick) {
   const button = document.createElement('button');
@@ -60,6 +66,7 @@ function makeItemRow(item) {
     }));
     const line = document.createElement('div');
     line.className = 'manage-row-line';
+    if (showPhotos) line.appendChild(Photo.makePhotoThumb(item, listThumbUrls));
     line.append(input, actions);
     row.append(line, error);
     return row;
@@ -68,6 +75,7 @@ function makeItemRow(item) {
   const label = document.createElement('span');
   label.className = 'manage-name';
   label.textContent = item.name;
+  if (showPhotos) label.classList.add('photo-name');
   if (item.archived) {
     const tag = document.createElement('span');
     tag.className = 'manage-archived-tag';
@@ -87,6 +95,7 @@ function makeItemRow(item) {
     actions.appendChild(makeButton('Archive', async () => {
       if (await SavedItems.confirmAndArchiveSavedItem(item)) await reloadManagePage();
     }));
+    if (showPhotos) appendPhotoButtons(actions, item);
   } else {
     actions.appendChild(makeButton('Restore', async () => {
       const result = await runRowAction(() => SavedItems.restoreSavedItem(item));
@@ -109,6 +118,7 @@ function makeItemRow(item) {
   }
   const line = document.createElement('div');
   line.className = 'manage-row-line';
+  if (showPhotos) line.appendChild(Photo.makePhotoThumb(item, listThumbUrls));
   line.append(label, actions);
   row.appendChild(line);
   if (rowError && rowError.id === item.id) {
@@ -119,6 +129,49 @@ function makeItemRow(item) {
     row.appendChild(error);
   }
   return row;
+}
+
+// Photo buttons for an active equipment row: Add photo, or Replace photo and Remove photo.
+// While its photo is being saved, the row's photo buttons are disabled.
+function appendPhotoButtons(actions, item) {
+  const busy = photoBusyIds.has(item.id);
+  const hasPhoto = item.photo instanceof Blob;
+  const choose = makeButton(busy ? 'Saving photo…' : hasPhoto ? 'Replace photo' : 'Add photo', () => {
+    rowError = null;
+    photoTargetId = item.id;
+    photoInput.open();
+  });
+  choose.disabled = busy;
+  actions.appendChild(choose);
+  if (hasPhoto) {
+    const remove = makeButton('Remove photo', async () => {
+      if (!window.confirm('Remove this photo?')) return;
+      await finishPhotoAction(item.id, Photo.removePhoto(item.id));
+    });
+    remove.disabled = busy;
+    actions.appendChild(remove);
+  }
+}
+
+// The old photo stays until the new one is saved; any failure leaves it unchanged.
+async function saveChosenPhoto(file) {
+  const itemId = photoTargetId;
+  photoTargetId = null;
+  if (itemId == null || photoBusyIds.has(itemId)) return;
+  photoBusyIds.add(itemId);
+  rowError = null;
+  await renderItemList();
+  const work = Photo.savePhotoFromFile(itemId, file);
+  await finishPhotoAction(itemId, work);
+}
+
+async function finishPhotoAction(itemId, work) {
+  photoBusyIds.add(itemId);
+  rowError = null;
+  const result = await work;
+  photoBusyIds.delete(itemId);
+  if (!result.ok) rowError = { id: itemId, text: result.message };
+  await reloadManagePage();
 }
 
 // Runs a row action, turning a storage failure into { ok: false, message }. Any earlier
@@ -140,6 +193,7 @@ async function renderItemList() {
 
   const listArea = document.getElementById('manage-list-area');
   listArea.innerHTML = '';
+  if (listThumbUrls) listThumbUrls.reset();
 
   const activeHeading = document.createElement('h2');
   activeHeading.textContent = 'Saved';
@@ -192,6 +246,7 @@ async function renderManagePage() {
   listArea.id = 'manage-list-area';
   listArea.className = 'detail-section';
   container.appendChild(listArea);
+  if (showPhotos) photoInput = Photo.createPhotoInput(container, saveChosenPhoto);
 
   managePicker = SavedItems.createPicker(pickerSection, {
     type: manageType,

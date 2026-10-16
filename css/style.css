@@ -325,6 +325,44 @@ body {
   background: #f3f4f6;
 }
 
+/* Equipment suggestions: photo slot, then the name. */
+.picker-suggestion.picker-suggestion-photo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+}
+
+.picker-photo {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 0.95rem;
+  margin-top: 6px;
+}
+
+/* Equipment photo slot: the whole photo fitted inside a 64×64 box, or an empty box. */
+.photo-thumb {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  background: #f3f4f6;
+  border-radius: 6px;
+}
+
+.photo-thumb-empty {
+  display: inline-block;
+  border: 1px solid #e5e7eb;
+}
+
+/* The name takes the space left beside the photo slot (and any buttons), keeps room for
+   a short name on one line, and wraps long names between words. */
+.photo-name {
+  flex: 1 1 0;
+  min-width: 7em;
+  overflow-wrap: break-word;
+}
+
 .picker-message,
 .manage-error {
   color: #B91C1C;
@@ -346,6 +384,10 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.manage-row-line .photo-thumb {
+  align-self: flex-start;
 }
 
 /* Archived rows have three buttons; let them wrap on narrow screens. */
