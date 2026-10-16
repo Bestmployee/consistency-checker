@@ -1,12 +1,19 @@
 // Export/import of all app data as a JSON backup file.
-// Export writes schema version 3: { schemaVersion, exportedAt, days, entries, savedItems }.
+// Export writes schema version 4: { schemaVersion, exportedAt, days, entries, savedItems }.
 // Version 3 is version 2 plus an optional deletedAt on saved items (permanently deleted
 // items, kept so past entries still show their names).
-// Import accepts schema version 1 (Stage 1 backups: days only), version 2 and version 3. The whole
-// file is validated before anything is written; only after the owner confirms the counts
-// are all three stores replaced, in one atomic transaction (ConsistencyDB.replaceAllData).
+// Version 4 is version 3 plus equipment photos: a saved item's photo is null or a
+// "data:image/jpeg;base64,..." string (stored in the app as a JPEG Blob).
+// Import accepts schema version 1 (Stage 1 backups: days only), and versions 2, 3 and 4. The whole
+// file is validated (every photo is checked to open as an image) before anything is written;
+// only after the owner confirms the counts are all three stores replaced, in one atomic
+// transaction (ConsistencyDB.replaceAllData).
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
+
+// Largest photo accepted from a backup (the app itself stores far smaller ones).
+const MAX_BACKUP_PHOTO_BYTES = 2 * 1024 * 1024;
+const JPEG_DATA_URL_PREFIX = 'data:image/jpeg;base64,';
 
 const NOT_A_BACKUP = "That file doesn't look like a Consistency Checker backup.";
 
@@ -20,7 +27,7 @@ const V2_FIELDS = {
   reading: ['id', 'date', 'type', 'bookItemId', 'pages', 'createdAt', 'updatedAt'],
 };
 
-// Version 3 allows exactly the version 2 fields, plus deletedAt on saved items.
+// Versions 3 and 4 allow exactly the version 2 fields, plus deletedAt on saved items.
 const V3_SAVED_ITEM_FIELDS = [...V2_FIELDS.savedItem, 'deletedAt'];
 
 function todayFilenameSuffix() {
@@ -31,10 +38,25 @@ function todayFilenameSuffix() {
   return `${y}-${m}-${day}`;
 }
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// A stored photo (Blob) can't go into JSON directly, so it is written as a data URL.
+async function savedItemForBackup(item) {
+  if (!(item.photo instanceof Blob)) return item;
+  return { ...item, photo: await blobToDataUrl(item.photo) };
+}
+
 async function exportToFile() {
   const days = await ConsistencyDB.getAllDays();
   const entries = await ConsistencyDB.getAllEntries();
-  const savedItems = await ConsistencyDB.getAllSavedItems();
+  const savedItems = await Promise.all((await ConsistencyDB.getAllSavedItems()).map(savedItemForBackup));
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
@@ -129,10 +151,27 @@ function canonicalV1Day(day) {
   return record;
 }
 
-// Returns a Map of id -> saved item, used to check entry references. allowDeleted (version 3)
-// accepts deletedAt, which marks a permanently deleted item; such an item must be archived.
-// Entries may refer to permanently deleted items.
-function validateSavedItems(savedItems, allowDeleted) {
+// Checks a version 4 photo: null, or a JPEG data URL no larger than the backup limit.
+// (Whether it really opens as an image is checked afterwards, in decodeBackupPhotos.)
+function checkBackupPhoto(item, label) {
+  if (item.photo === null) return;
+  if (item.type !== 'equipment') rejectBackup(`${label} is a book with a photo, which isn't allowed.`);
+  if (hasField(item, 'deletedAt')) rejectBackup(`${label} is permanently deleted but still has a photo.`);
+  const base64 = typeof item.photo === 'string' && item.photo.startsWith(JPEG_DATA_URL_PREFIX)
+    ? item.photo.slice(JPEG_DATA_URL_PREFIX.length) : null;
+  if (base64 === null || base64.length === 0 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    rejectBackup(`${label} has an invalid photo.`);
+  }
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  if ((base64.length / 4) * 3 - padding > MAX_BACKUP_PHOTO_BYTES) {
+    rejectBackup(`${label} has a photo that is too large.`);
+  }
+}
+
+// Returns a Map of id -> saved item, used to check entry references. allowDeleted (versions 3
+// and 4) accepts deletedAt, which marks a permanently deleted item; such an item must be archived.
+// allowPhotos (version 4) accepts equipment photos. Entries may refer to permanently deleted items.
+function validateSavedItems(savedItems, allowDeleted, allowPhotos) {
   const itemsById = new Map();
   savedItems.forEach((item, i) => {
     let label = `saved item ${i + 1}`;
@@ -145,12 +184,13 @@ function validateSavedItems(savedItems, allowDeleted) {
     // Names are restored exactly as stored; only a missing or blank name is rejected.
     if (typeof item.name !== 'string' || item.name.trim() === '') rejectBackup(`${label} has a missing or blank name.`);
     if (typeof item.archived !== 'boolean') rejectBackup(`${label} has an invalid archived value.`);
-    if (item.photo !== null) rejectBackup(`${label} has a photo value, which this version doesn't support.`);
+    if (!allowPhotos && item.photo !== null) rejectBackup(`${label} has a photo value, which this version doesn't support.`);
     checkTimestamps(item, label);
     if (hasField(item, 'deletedAt')) {
       if (!isNonNegativeSafeInteger(item.deletedAt)) rejectBackup(`${label} has an invalid deletedAt.`);
       if (item.archived !== true) rejectBackup(`${label} is permanently deleted but not archived.`);
     }
+    if (allowPhotos) checkBackupPhoto(item, label);
     itemsById.set(item.id, item);
   });
   return itemsById;
@@ -212,13 +252,13 @@ function validateBackup(payload) {
     return { schemaVersion: 1, days: payload.days.map(canonicalV1Day), entries: [], savedItems: [] };
   }
 
-  if (version === 2 || version === 3) {
+  if (version === 2 || version === 3 || version === 4) {
     checkOnlyFields(payload, V2_FIELDS.backup, 'the backup');
     for (const list of ['days', 'entries', 'savedItems']) {
       if (!Array.isArray(payload[list])) rejectBackup(`"${list}" is missing or is not a list.`);
     }
     validateDays(payload.days, true);
-    const itemsById = validateSavedItems(payload.savedItems, version === 3);
+    const itemsById = validateSavedItems(payload.savedItems, version >= 3, version === 4);
     validateEntries(payload.entries, itemsById);
     return { schemaVersion: version, days: payload.days, entries: payload.entries, savedItems: payload.savedItems };
   }
@@ -226,7 +266,40 @@ function validateBackup(payload) {
   throw new Error(`This backup was made by a newer or unknown version of the app (schema version ${version}) and can't be imported.`);
 }
 
-// Reads, parses and validates a backup file, but does not touch storage.
+function dataUrlToJpegBlob(dataUrl) {
+  const binary = atob(dataUrl.slice(JPEG_DATA_URL_PREFIX.length));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: 'image/jpeg' });
+}
+
+// Turns each validated photo back into a JPEG Blob and checks that it really opens as a
+// JPEG image; any photo that doesn't rejects the whole backup. Returns the backup with
+// Blob photos (the parsed records themselves are left unchanged).
+async function decodeBackupPhotos(backup) {
+  const savedItems = [];
+  for (const [i, item] of backup.savedItems.entries()) {
+    if (typeof item.photo !== 'string') {
+      savedItems.push(item);
+      continue;
+    }
+    const label = `saved item ${i + 1} (id ${item.id})`;
+    const blob = dataUrlToJpegBlob(item.photo);
+    const start = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+    if (start[0] !== 0xff || start[1] !== 0xd8 || start[2] !== 0xff) rejectBackup(`${label} has a photo that isn't a JPEG image.`);
+    try {
+      const bitmap = await createImageBitmap(blob);
+      bitmap.close();
+    } catch (err) {
+      rejectBackup(`${label} has a photo that can't be opened.`);
+    }
+    savedItems.push({ ...item, photo: blob });
+  }
+  return { ...backup, savedItems };
+}
+
+// Reads, parses and validates a backup file (including opening every photo), but does not
+// touch storage.
 async function readBackupFile(file) {
   const text = await file.text();
   let payload;
@@ -235,7 +308,7 @@ async function readBackupFile(file) {
   } catch (e) {
     throw new Error('That file is not valid JSON.');
   }
-  return validateBackup(payload);
+  return decodeBackupPhotos(validateBackup(payload));
 }
 
 function backupCount(count, singular, plural) {
@@ -244,6 +317,9 @@ function backupCount(count, singular, plural) {
 
 function confirmationMessage(backup) {
   const deletedCount = backup.savedItems.filter((item) => hasField(item, 'deletedAt')).length;
+  const photoCount = backup.savedItems.filter((item) =>
+    item.type === 'equipment' && !hasField(item, 'deletedAt') && item.photo != null
+  ).length;
   const lines = [
     'Replace ALL current data with this backup?',
     '',
@@ -252,6 +328,9 @@ function confirmationMessage(backup) {
     `• ${backupCount(backup.entries.length, 'entry', 'entries')}`,
     `• ${backupCount(backup.savedItems.length - deletedCount, 'saved item', 'saved items')}`,
   ];
+  if (photoCount > 0) {
+    lines.push(`• ${backupCount(photoCount, 'equipment photo', 'equipment photos')}`);
+  }
   if (deletedCount > 0) {
     lines.push(`• ${backupCount(deletedCount, 'permanently deleted item', 'permanently deleted items')} (kept for past history)`);
   }

@@ -3,8 +3,9 @@
 // Unmarked days simply have no record.
 // 'entries' record shape (v2): { id, date: "YYYY-MM-DD", type: "gym" | "reading", createdAt, updatedAt,
 //   equipment: [{ itemId, sets, reps }, ...] (gym) | bookItemId, pages (reading) }
-// 'savedItems' record shape (v2): { id, type: "equipment" | "book", name, archived, photo: null, createdAt, updatedAt,
+// 'savedItems' record shape (v2): { id, type: "equipment" | "book", name, archived, photo, createdAt, updatedAt,
 //   deletedAt? }
+//   photo: null, or (equipment only) a shrunk JPEG Blob. Permanently deleted items always have photo: null.
 //   active: archived false. archived: archived true. permanently deleted: archived true plus
 //   deletedAt (epoch ms); the record is kept so past entries still show its name.
 
@@ -232,6 +233,7 @@ async function addSavedItem(type, name) {
 // Reads and rewrites one saved item in a single transaction, applying the changes and refreshing updatedAt.
 // Permanently deleted items are never changed. allowed(item), if given, must accept the stored
 // item's current state, so a stale screen can't apply an action the item no longer allows.
+// A refusal is an Error with a code ('missing' | 'deleted' | 'changed') so callers can tell them apart.
 async function modifySavedItem(id, changes, allowed) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -241,9 +243,9 @@ async function modifySavedItem(id, changes, allowed) {
     let refusal = null;
     request.onsuccess = () => {
       const item = request.result;
-      if (!item) refusal = new Error(`Saved item ${id} not found`);
-      else if (isDeletedSavedItem(item)) refusal = new Error('That item was permanently deleted.');
-      else if (allowed && !allowed(item)) refusal = new Error('That item changed since the page was opened.');
+      if (!item) refusal = savedItemRefusal('missing', `Saved item ${id} not found`);
+      else if (isDeletedSavedItem(item)) refusal = savedItemRefusal('deleted', 'That item was permanently deleted.');
+      else if (allowed && !allowed(item)) refusal = savedItemRefusal('changed', 'That item changed since the page was opened.');
       if (refusal) {
         tx.abort();
         return;
@@ -256,6 +258,12 @@ async function modifySavedItem(id, changes, allowed) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(refusal || tx.error);
   });
+}
+
+function savedItemRefusal(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
 }
 
 async function updateSavedItem(id, { name }) {
@@ -273,8 +281,15 @@ async function restoreSavedItem(id) {
 
 // Only an archived item can be permanently deleted. The record is kept (archived, with
 // deletedAt set) so past entries still show its name; it is hidden everywhere else.
+// Its photo is cleared in the same write.
 async function permanentlyDeleteSavedItem(id) {
-  return modifySavedItem(id, (now) => ({ archived: true, deletedAt: now }), (item) => item.archived);
+  return modifySavedItem(id, (now) => ({ archived: true, deletedAt: now, photo: null }), (item) => item.archived);
+}
+
+// Sets (Blob) or removes (null) an equipment item's photo. Only an active equipment item
+// can change its photo; an archived, deleted or book item is refused and left unchanged.
+async function setSavedItemPhoto(id, photo) {
+  return modifySavedItem(id, { photo }, (item) => item.type === 'equipment' && !item.archived);
 }
 
 // Resolves with the saved item record (any state), or null if there is none.
@@ -354,6 +369,7 @@ window.ConsistencyDB = {
   archiveSavedItem,
   restoreSavedItem,
   permanentlyDeleteSavedItem,
+  setSavedItemPhoto,
   getSavedItem,
   isDeletedSavedItem,
   getEntryCountForItem,

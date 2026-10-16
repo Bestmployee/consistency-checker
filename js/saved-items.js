@@ -104,9 +104,13 @@ async function restoreSavedItem(item) {
 }
 
 // Shows how many entries use the archived item and what permanent deletion means, asks
-// for confirmation, then permanently deletes it. Resolves true if deleted, false if cancelled.
+// for confirmation, then permanently deletes it (its photo too). Resolves true if deleted,
+// false if cancelled.
 async function confirmAndPermanentlyDeleteSavedItem(item) {
   const count = await ConsistencyDB.getEntryCountForItem(item.id);
+  // Read the stored item, so the photo sentence matches what is actually stored.
+  const stored = await ConsistencyDB.getSavedItem(item.id);
+  const photoNote = stored && stored.photo != null ? ['', 'Its photo will also be permanently deleted.'] : [];
   const kind = item.type === 'book' ? 'books' : 'equipment';
   const values = item.type === 'book' ? 'pages read' : 'sets and reps';
   let usage = "It isn't used in any entries.";
@@ -119,6 +123,7 @@ async function confirmAndPermanentlyDeleteSavedItem(item) {
     `Permanently delete '${item.name}'?`,
     '',
     `This can't be undone. '${item.name}' will be removed from your saved ${kind} for good and can't be restored.`,
+    ...photoNote,
     '',
     usage,
     '',
@@ -133,9 +138,16 @@ async function confirmAndPermanentlyDeleteSavedItem(item) {
 // "+ Add 'X' as new item" control. Typing never creates or selects anything;
 // only tapping a suggestion or the Add control does, and either one calls
 // onSelect(item) with the chosen saved item (use item.id).
-function createPicker(container, { type, onSelect, placeholder = 'Type to search' }) {
+// Equipment suggestions show a 64×64 photo slot. offerPhotoOnCreate (Gym form only) shows an
+// optional "Add photo (optional)" button for an item just created here, while it is selected.
+function createPicker(container, { type, onSelect, placeholder = 'Type to search', offerPhotoOnCreate = false }) {
   let items = [];
   let selectedId = null;
+  const showPhotos = type === 'equipment';
+  const thumbUrls = showPhotos ? Photo.createThumbUrls() : null;
+  const offerPhoto = showPhotos && offerPhotoOnCreate;
+  let createdId = null; // the item just created here, which may be offered a photo
+  let photoBusy = false;
 
   const root = document.createElement('div');
   root.className = 'picker';
@@ -155,7 +167,44 @@ function createPicker(container, { type, onSelect, placeholder = 'Type to search
   message.className = 'picker-message';
   message.hidden = true;
   root.append(input, list, addButton, message);
+
+  let photoButton = null;
+  let photoMessage = null;
+  let photoInput = null;
+  if (offerPhoto) {
+    photoButton = document.createElement('button');
+    photoButton.type = 'button';
+    photoButton.className = 'picker-photo';
+    photoButton.hidden = true;
+    photoMessage = document.createElement('p');
+    photoMessage.className = 'picker-message picker-photo-message';
+    photoMessage.hidden = true;
+    root.append(photoButton, photoMessage);
+    photoInput = Photo.createPhotoInput(root, addPhotoToCreatedItem);
+    photoButton.addEventListener('click', () => photoInput.open());
+  }
   container.appendChild(root);
+
+  // The photo is saved to the item on its own, apart from any form: saving or closing
+  // the form meanwhile is fine, and the photo still lands on the item.
+  async function addPhotoToCreatedItem(file) {
+    const itemId = createdId;
+    if (itemId == null || photoBusy) return;
+    photoBusy = true;
+    photoMessage.hidden = true;
+    render();
+    const result = await Photo.savePhotoFromFile(itemId, file);
+    photoBusy = false;
+    if (!root.isConnected) return; // the form has closed; nothing on screen to update
+    if (result.ok) {
+      if (createdId === itemId) createdId = null; // done: the button goes away
+      await refresh();
+    } else {
+      photoMessage.textContent = result.message;
+      photoMessage.hidden = false;
+      render();
+    }
+  }
 
   function select(item) {
     selectedId = item.id;
@@ -172,7 +221,15 @@ function createPicker(container, { type, onSelect, placeholder = 'Type to search
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'picker-suggestion' + (item.id === selectedId ? ' picker-selected' : '');
-      button.textContent = item.name;
+      if (showPhotos) {
+        button.classList.add('picker-suggestion-photo');
+        const name = document.createElement('span');
+        name.className = 'photo-name';
+        name.textContent = item.name;
+        button.append(Photo.makePhotoThumb(item, thumbUrls), name);
+      } else {
+        button.textContent = item.name;
+      }
       button.addEventListener('click', () => select(item));
       li.appendChild(button);
       list.appendChild(li);
@@ -187,6 +244,14 @@ function createPicker(container, { type, onSelect, placeholder = 'Type to search
     if (result.status === 'new') addButton.textContent = `+ Add '${result.name}' as new item`;
     message.hidden = result.status !== 'archived';
     if (result.status === 'archived') message.textContent = conflictMessage(result);
+
+    if (offerPhoto) {
+      const offered = createdId != null && createdId === selectedId;
+      photoButton.hidden = !offered;
+      photoButton.disabled = photoBusy;
+      photoButton.textContent = photoBusy ? 'Adding photo…' : 'Add photo (optional)';
+      if (!offered) photoMessage.hidden = true;
+    }
   }
 
   input.addEventListener('input', () => {
@@ -200,6 +265,7 @@ function createPicker(container, { type, onSelect, placeholder = 'Type to search
       const created = await createSavedItem(type, input.value);
       await refresh();
       if (created.ok) {
+        if (offerPhoto && !photoBusy) createdId = created.item.id;
         select(created.item);
       } else {
         message.textContent = created.message;
@@ -213,6 +279,7 @@ function createPicker(container, { type, onSelect, placeholder = 'Type to search
   // Reloads items from storage (e.g. after a rename or archive elsewhere on the page).
   async function refresh() {
     items = await getItemsOfType(type);
+    if (thumbUrls) thumbUrls.reset();
     const selected = items.find((item) => item.id === selectedId);
     if (selected) input.value = selected.name;
     render();

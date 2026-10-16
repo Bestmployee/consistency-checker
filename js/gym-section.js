@@ -111,7 +111,11 @@ function makeGymForm({ initial, onSave, onCancel }) {
   form.appendChild(equipmentLabel);
   const pickerArea = document.createElement('div');
   form.appendChild(pickerArea);
-  const picker = SavedItems.createPicker(pickerArea, { type: 'equipment', placeholder: 'Type to search equipment' });
+  const picker = SavedItems.createPicker(pickerArea, {
+    type: 'equipment',
+    placeholder: 'Type to search equipment',
+    offerPhotoOnCreate: true,
+  });
   if (initial) picker.setSelected(initial.itemId);
 
   const numbers = document.createElement('div');

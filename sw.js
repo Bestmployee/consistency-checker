@@ -1,7 +1,7 @@
 // Change this string on every deploy so phones pick up the new files instead of
 // serving a stale cached copy. It names the ticket being deployed (add -b, -c, ... for
 // a redeploy of the same ticket); it is a cache revision, not a product stage.
-const CACHE_NAME = 'consistency-checker-nic-15';
+const CACHE_NAME = 'consistency-checker-nic-16';
 const CACHE_PREFIX = 'consistency-checker-';
 
 const APP_SHELL = [
@@ -26,6 +26,7 @@ const APP_SHELL = [
   './js/gym-section.js',
   './js/reading-section.js',
   './js/detail-screen.js',
+  './js/photo.js',
 ];
 
 self.addEventListener('install', (event) => {
