@@ -165,8 +165,73 @@ body {
   font-weight: 700;
 }
 
+/* A closed month's result under the gold day's number (or "Unres." if not final). */
+.cal-day.cal-gold.cal-has-result {
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.cal-result {
+  font-size: 0.65rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 .result-day-note {
   margin: 0 0 12px;
+}
+
+/* Monthly result on a gold result day's page. */
+.month-result-header {
+  background: #FACC15;
+  color: #000000;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.month-result-header h2 {
+  font-size: 1.05rem;
+  margin: 0 0 4px;
+}
+
+.month-result-header p {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+}
+
+.month-result-unresolved {
+  border: 2px solid #B91C1C;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+}
+
+.month-result-unresolved p {
+  margin: 4px 0;
+}
+
+.month-result-unresolved p:first-child {
+  color: #B91C1C;
+  font-weight: 700;
+}
+
+.month-result-line {
+  margin: 4px 0;
+}
+
+.month-result-note {
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.month-result-list {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.month-result-list li {
+  margin: 2px 0;
 }
 
 #detail-header {

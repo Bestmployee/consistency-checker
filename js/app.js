@@ -23,8 +23,13 @@ function showToast(message) {
 // data. The tap rule is decided from storage, not from the cell, and taps are handled one
 // at a time so a quick double tap can't act on stale state. The month is then redrawn,
 // since a tap can also add or clear a "?".
+// A tap on a gold result day opens its monthly result (as a long-press does).
 let tapQueue = Promise.resolve();
 function handleDayTap(dateKey) {
+  if (DayState.tapOpensDay(dateKey)) {
+    handleDayLongPress(dateKey);
+    return;
+  }
   tapQueue = tapQueue.then(async () => {
     const [day, entries] = await Promise.all([
       ConsistencyDB.getDay(dateKey),

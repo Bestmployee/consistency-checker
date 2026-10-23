@@ -53,6 +53,11 @@
     };
   }
 
+  // A normal tap on a result day opens it (its monthly result) instead of changing a mark.
+  function tapOpensDay(dateKey) {
+    return isExclusiveResultDay(dateKey);
+  }
+
   // What a normal tap stores: 'red', null (unmarked), or undefined (no change).
   // The only tap cycle is unmarked -> red -> unmarked, on a day with no Gym data and no
   // stored green. Every other day ignores taps: a result day; a Gym day (the Gym data
@@ -66,7 +71,7 @@
     return undefined;
   }
 
-  const api = { isExclusiveResultDay, entriesAllowed, gymSaveRefusal, describeDay, nextTapStatus };
+  const api = { isExclusiveResultDay, entriesAllowed, gymSaveRefusal, describeDay, tapOpensDay, nextTapStatus };
   if (typeof window !== 'undefined') window.DayState = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

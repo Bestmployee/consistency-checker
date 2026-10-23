@@ -55,6 +55,16 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
     renderMonth();
   }
 
+  // The compact result for the gold day ending on monthEndKey, or null if that month hasn't
+  // closed (or has no result). Only a closed month needs the whole history, which every
+  // result depends on (streaks carry across months), so only then is everything read.
+  async function loadMonthResult(monthEndKey, todayKey) {
+    if (!DayState.isExclusiveResultDay(monthEndKey) || monthEndKey > todayKey) return null;
+    const [days, entries] = await Promise.all([ConsistencyDB.getAllDays(), ConsistencyDB.getAllEntries()]);
+    const summary = SummaryCalc.computeSummary({ days, entries, todayKey });
+    return MonthResultView.calendarResult(summary, monthEndKey, todayKey);
+  }
+
   // Counts renders so a slower, older render never replaces a newer one.
   let renderCount = 0;
 
@@ -76,9 +86,10 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
 
     const monthStartKey = ConsistencyDB.toDateKey(new Date(year, month, 1));
     const monthEndKey = ConsistencyDB.toDateKey(new Date(year, month, daysInMonth));
-    const [statuses, entries] = await Promise.all([
+    const [statuses, entries, monthResult] = await Promise.all([
       ConsistencyDB.getDaysInRange(monthStartKey, monthEndKey),
       ConsistencyDB.getEntriesInRange(monthStartKey, monthEndKey),
+      loadMonthResult(monthEndKey, todayKey),
     ]);
     if (render !== renderCount) return;
 
@@ -113,6 +124,15 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
         if (look.gold) cell.classList.add('cal-gold');
         cell.textContent = String(dayNum);
         cell.dataset.date = dateKey;
+        // Once the month has closed, its gold day also shows the result under the number.
+        if (look.resultDay && monthResult) {
+          const result = document.createElement('span');
+          result.className = 'cal-result' + (monthResult.unresolved ? ' cal-result-unresolved' : '');
+          result.textContent = monthResult.text;
+          cell.appendChild(result);
+          cell.classList.add('cal-has-result');
+          cell.setAttribute('aria-label', `${dayNum}, ${monthResult.label}`);
+        }
 
         Gestures.attach(cell, {
           onTap: () => onDayTap(dateKey, cell),

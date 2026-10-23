@@ -63,6 +63,15 @@ test('a refused Gym save creates no Gym data and leaves the red mark as it is', 
   assert.equal(db.store.days['2026-10-20'], 'red');
 });
 
+test('a Gym save on a red + Reading day is refused; the Reading entry stays saved', async () => {
+  const reading = { id: 3, date: '2026-10-20', type: 'reading', bookItemId: 2, pages: 12 };
+  const db = makeFakeDB({ days: { '2026-10-20': 'red' }, entries: [reading] });
+  const page = loadGymSection(db);
+  await assert.rejects(page.addGymRow('2026-10-20', ROW), /marked red/);
+  assert.deepEqual(db.store.entries, [reading]);
+  assert.equal(db.store.days['2026-10-20'], 'red');
+});
+
 test('editing a Gym row on a red day (old or imported data) is refused too, and changes nothing', async () => {
   const existing = { id: 5, date: '2026-10-20', type: 'gym', equipment: [{ ...ROW }] };
   const db = makeFakeDB({ days: { '2026-10-20': 'red' }, entries: [existing] });

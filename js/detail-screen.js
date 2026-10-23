@@ -87,10 +87,19 @@ async function refreshDetailSection(kind, dateKey, notice) {
   detailSectionElements[kind] = fresh;
 }
 
-// A month's final day is its result day: no Gym or Reading controls. Any activity stored
-// there earlier is listed read-only (kept, never deleted, and not counted).
+// A month's final day is its result day: it shows the month's result (js/month-result-view.js,
+// calculated fresh from all stored data) and has no Gym or Reading controls. Any activity
+// stored there earlier is listed read-only (kept, never deleted, and not counted).
 async function renderResultDayPage(container, dateKey, date) {
-  const { entries, nameFor } = await loadDayData(dateKey);
+  const todayKey = ConsistencyDB.toDateKey(new Date());
+  const [{ entries, nameFor }, allDays, allEntries] = await Promise.all([
+    loadDayData(dateKey),
+    ConsistencyDB.getAllDays(),
+    ConsistencyDB.getAllEntries(),
+  ]);
+  const summary = SummaryCalc.computeSummary({ days: allDays, entries: allEntries, todayKey });
+  const result = MonthResultView.render(MonthResultView.buildMonthView(summary, dateKey, todayKey));
+
   const month = date.toLocaleDateString('en-US', { month: 'long' });
   const section = document.createElement('section');
   section.className = 'detail-section result-day-section';
@@ -121,7 +130,7 @@ async function renderResultDayPage(container, dateKey, date) {
     }
     section.append(intro, list);
   }
-  container.replaceChildren(section);
+  container.replaceChildren(result, section);
 }
 
 async function renderDetailPage() {
@@ -147,5 +156,15 @@ async function renderDetailPage() {
   container.innerHTML = '';
   container.append(detailSectionElements.gym, detailSectionElements.reading);
 }
+
+// A result day's page restored by Back (back/forward cache) may show a result from before
+// other days were edited; recalculate it from storage.
+window.addEventListener('pageshow', (event) => {
+  const dateKey = new URLSearchParams(window.location.search).get('date');
+  const date = parseDateKey(dateKey);
+  if (event.persisted && date && !DayState.entriesAllowed(dateKey)) {
+    renderResultDayPage(document.getElementById('detail'), dateKey, date);
+  }
+});
 
 renderDetailPage();
