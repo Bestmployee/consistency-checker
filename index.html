@@ -15,6 +15,7 @@
 <header id="app-header">
   <h1>Consistency Checker</h1>
   <div class="header-actions">
+    <button id="scoring-btn" aria-haspopup="dialog" aria-controls="scoring-dialog">Scoring</button>
     <button id="export-btn">Export</button>
     <button id="import-btn">Import</button>
     <input type="file" id="import-input" accept="application/json" hidden>
@@ -29,6 +30,83 @@
 <main id="calendar"></main>
 
 <div id="toast" hidden></div>
+
+<!-- Read-only scoring reference (wording follows docs/scoring-and-streaks.md). -->
+<dialog id="scoring-dialog" aria-labelledby="scoring-title">
+  <div class="scoring-panel">
+    <div class="scoring-header">
+      <h2 id="scoring-title">Scoring and streaks</h2>
+      <button type="button" id="scoring-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="scoring-body">
+      <h3>Tracking</h3>
+      <ul>
+        <li>Tracking starts on October 18, 2026.</li>
+        <li>Earlier dates are outside scoring: no misses, breaks or "?".</li>
+      </ul>
+
+      <h3>Daily Consistency</h3>
+      <ul>
+        <li>Gym + Reading = 1</li>
+        <li>Gym only = 0.5</li>
+        <li>Reading only = 0.5</li>
+        <li>No activity = 0, and it breaks the live streak immediately.</li>
+        <li>A red day with Reading is a valid Reading-only 0.5 day.</li>
+      </ul>
+
+      <h3>Streak</h3>
+      <ul>
+        <li>Up to 3 consecutive half-days are allowed.</li>
+        <li>The 4th consecutive half-day breaks the streak and is not counted.</li>
+        <li>A full 1-point day resets the half-day count.</li>
+        <li>After a break, the next qualifying activity starts a new streak.</li>
+        <li>A streak carries across gold result days, from month to month, and from December into January.</li>
+      </ul>
+
+      <h3>Monthly result</h3>
+      <ul>
+        <li>The final calendar day of every month is the gold result day. Tap it to see that month's result.</li>
+        <li>No Gym or Reading can be added on the gold day.</li>
+        <li>The gold day is not scored and does not change the streak or the half-day count.</li>
+        <li>Only the streak still alive at the month's last scored day counts toward that month's Consistency result.</li>
+        <li>If the streak breaks during the month, the part before the break does not count in that month's result.</li>
+      </ul>
+
+      <h3>Calendar</h3>
+      <ul>
+        <li><strong>Green</strong> = Gym data exists. Green is automatic.</li>
+        <li><strong>Red</strong> = no Gym. On a day with no Gym, a tap switches unmarked ↔ red.</li>
+        <li>A Gym save on a red day is refused until the red mark is removed.</li>
+        <li><strong>Black stripe</strong> = Reading data exists.</li>
+        <li><strong>?</strong> = the day's calendar mark conflicts with its Gym data. That date is left out of everything until corrected.</li>
+      </ul>
+
+      <h3>Gym growth</h3>
+      <ul>
+        <li>Each Gym row = sets × reps.</li>
+        <li>A day's Gym value is its single highest row. Rows are never added together.</li>
+        <li><strong>Gym Contribution</strong> = the sum of those daily values on Gym days in the surviving streak.</li>
+        <li><strong>Average Gym Performance</strong> = Gym Contribution ÷ Gym days.</li>
+      </ul>
+
+      <h3>Reading growth</h3>
+      <ul>
+        <li>A day's Reading value is the number of different books read that day. The same book entered several times counts once.</li>
+        <li>Pages are saved but are not used for scoring.</li>
+        <li><strong>Reading Contribution</strong> = the sum of those daily values on Reading days in the surviving streak.</li>
+        <li><strong>Average Reading Breadth</strong> = Reading Contribution ÷ Reading days.</li>
+      </ul>
+
+      <h3>History and corrections</h3>
+      <ul>
+        <li>Month-to-month comparisons and history stay within one calendar year. January does not compare with December.</li>
+        <li>The carried streak still continues from December into January.</li>
+        <li>Correcting past data recalculates every result it affects.</li>
+        <li>A completed month that still has "?" dates shows <strong>Unresolved month</strong> instead of a final number.</li>
+      </ul>
+    </div>
+  </div>
+</dialog>
 
 <script src="js/db.js"></script>
 <script src="js/gestures.js"></script>
