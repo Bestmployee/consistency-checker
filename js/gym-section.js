@@ -30,8 +30,19 @@ async function getStoredGymRow(dateKey, entryId, index, expected) {
   return entry;
 }
 
+// Throws if the day is marked red: red means no Gym, so a Gym save is refused (the red mark
+// is left as it is) until the red mark is removed on the calendar. Read fresh at save time,
+// so a red mark added after this page was opened is respected too.
+async function checkGymSaveAllowed(dateKey) {
+  EntryUtils.checkEntriesAllowed(dateKey);
+  const day = await ConsistencyDB.getDay(dateKey);
+  const refusal = DayState.gymSaveRefusal(day ? day.status : undefined);
+  if (refusal) throw new Error(refusal);
+}
+
 // Appends a row to the oldest gym entry for the day, or creates the day's gym entry.
 async function addGymRow(dateKey, row) {
+  await checkGymSaveAllowed(dateKey);
   await EntryUtils.checkItemsNotDeleted(row.itemId);
   const [oldest] = await getGymEntries(dateKey);
   if (oldest) {
@@ -44,6 +55,7 @@ async function addGymRow(dateKey, row) {
 // Replaces one row in its own entry, keeping its position. A row using a permanently
 // deleted item is read-only, and a row can't be changed to use one.
 async function updateGymRow(dateKey, entryId, index, expected, row) {
+  await checkGymSaveAllowed(dateKey);
   const entry = await getStoredGymRow(dateKey, entryId, index, expected);
   await EntryUtils.checkItemsNotDeleted(expected.itemId, row.itemId);
   const equipment = entry.equipment.slice();
@@ -57,6 +69,7 @@ async function deleteGymRow(dateKey, entryId, index, expected) {
   const entry = await getStoredGymRow(dateKey, entryId, index, expected);
   if (entry.equipment.length <= 1) {
     await ConsistencyDB.deleteEntry(entry.id);
+    await clearGreenIfNoGym(dateKey);
     return;
   }
   const equipment = entry.equipment.slice();
@@ -64,10 +77,14 @@ async function deleteGymRow(dateKey, entryId, index, expected) {
   await ConsistencyDB.updateEntry({ ...entry, equipment });
 }
 
-// Saving gym data marks an unmarked day green; an existing green/red mark is never changed.
-async function markDayGreenIfUnmarked(dateKey) {
+// Green is drawn from Gym data, so saving a row never marks the day. Days saved before
+// Stage 4 still have a stored green; once the day's last Gym row is gone, that green is
+// removed with it, so the day doesn't keep a green with no Gym data (a "?" mismatch).
+// A red mark is never changed.
+async function clearGreenIfNoGym(dateKey) {
+  if ((await getGymEntries(dateKey)).length > 0) return;
   const day = await ConsistencyDB.getDay(dateKey);
-  if (!day) await ConsistencyDB.setDay(dateKey, 'green');
+  if (day && day.status === 'green') await ConsistencyDB.deleteDay(dateKey);
 }
 
 let gymFormCounter = 0;
@@ -187,13 +204,7 @@ function createGymSection({ dateKey, entries, nameFor, isDeletedItem, header, no
     } catch (err) {
       return `Couldn't save: ${err.message}`;
     }
-    let afterNotice = null;
-    try {
-      await markDayGreenIfUnmarked(dateKey);
-    } catch (err) {
-      afterNotice = `Saved, but the calendar day couldn't be marked green: ${err.message}`;
-    }
-    await onChanged(afterNotice);
+    await onChanged(null);
     return null;
   }
 

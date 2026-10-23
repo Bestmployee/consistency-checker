@@ -19,20 +19,26 @@ function showToast(message) {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 2500);
 }
 
-function nextStatus(cell) {
-  if (cell.classList.contains('cal-green')) return 'red';
-  if (cell.classList.contains('cal-red')) return null; // back to unmarked
-  return 'green';
-}
-
-async function handleDayTap(dateKey, cell) {
-  const status = nextStatus(cell);
-  if (status) {
-    await ConsistencyDB.setDay(dateKey, status);
-  } else {
-    await ConsistencyDB.deleteDay(dateKey);
-  }
-  calendar.setCellStatus(cell, status);
+// A tap marks a day red or unmarks it (DayState.nextTapStatus); green comes only from Gym
+// data. The tap rule is decided from storage, not from the cell, and taps are handled one
+// at a time so a quick double tap can't act on stale state. The month is then redrawn,
+// since a tap can also add or clear a "?".
+let tapQueue = Promise.resolve();
+function handleDayTap(dateKey) {
+  tapQueue = tapQueue.then(async () => {
+    const [day, entries] = await Promise.all([
+      ConsistencyDB.getDay(dateKey),
+      ConsistencyDB.getEntriesForDate(dateKey),
+    ]);
+    const status = DayState.nextTapStatus(dateKey, day ? day.status : undefined, entries);
+    if (status === undefined) return;
+    if (status) {
+      await ConsistencyDB.setDay(dateKey, status);
+    } else {
+      await ConsistencyDB.deleteDay(dateKey);
+    }
+    await calendar.refresh();
+  }).catch((err) => showToast(`Couldn't save: ${err.message}`));
 }
 
 // Normal navigation (not replace) so Android Back returns to the calendar.
@@ -46,9 +52,9 @@ const calendar = Calendar.create(document.getElementById('calendar'), {
 });
 
 // When Back restores this page from the browser's memory (back/forward cache), the
-// cells still show the colours from before leaving, e.g. not a day the Gym section has
-// since marked green. Reload the current month's colours from storage so the display,
-// and the next tap's cycle, match what is saved. The visible month is kept.
+// cells still show the state from before leaving, e.g. not a day whose Gym entries have
+// since been added or removed (green, "?"). Reload the current month from storage so the
+// display matches what is saved. The visible month is kept.
 window.addEventListener('pageshow', (event) => {
   if (event.persisted) calendar.refresh();
 });

@@ -139,6 +139,36 @@ body {
   pointer-events: none;
 }
 
+/* "?": the stored mark and the Gym data disagree (left out of scoring until corrected).
+   A large black "?" in the top-right corner, clear of the centred day number. */
+.cal-day.cal-unresolved::after {
+  content: '?';
+  position: absolute;
+  top: 0;
+  right: 12%;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #000000;
+  pointer-events: none;
+}
+
+/* A month's final day is its result day: no activity is entered there. */
+.cal-day.cal-result-day {
+  cursor: default;
+}
+
+/* Gold: the month is completed and its result is posted on this day. */
+.cal-day.cal-gold {
+  background: #FACC15;
+  color: #000000;
+  font-weight: 700;
+}
+
+.result-day-note {
+  margin: 0 0 12px;
+}
+
 #detail-header {
   display: flex;
   align-items: center;

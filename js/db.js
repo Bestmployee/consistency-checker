@@ -1,6 +1,7 @@
 // IndexedDB wrapper.
 // 'days' record shape: { date: "YYYY-MM-DD", status: "green" | "red", updatedAt: <epoch ms> }
-// Unmarked days simply have no record.
+// Unmarked days simply have no record. Since Stage 4 green is drawn from Gym entries and is
+// never written by the app; a stored "green" is legacy data (see js/day-state.js).
 // 'entries' record shape (v2): { id, date: "YYYY-MM-DD", type: "gym" | "reading", createdAt, updatedAt,
 //   equipment: [{ itemId, sets, reps }, ...] (gym) | bookItemId, pages (reading) }
 // 'savedItems' record shape (v2): { id, type: "equipment" | "book", name, archived, photo, createdAt, updatedAt,
@@ -170,17 +171,15 @@ async function deleteEntry(id) {
   });
 }
 
-// Returns a Set of the dates in [startKey, endKey] inclusive that have at least one
-// Reading entry (used for the calendar's Reading marker).
-async function getReadingDatesInRange(startKey, endKey) {
+// Returns every entry dated in [startKey, endKey] inclusive (used by the calendar, whose
+// green and Reading marker are drawn from the entries).
+async function getEntriesInRange(startKey, endKey) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_ENTRIES, 'readonly');
     const range = IDBKeyRange.bound(startKey, endKey);
     const request = tx.objectStore(STORE_ENTRIES).index('date').getAll(range);
-    request.onsuccess = () => {
-      resolve(new Set(request.result.filter((entry) => entry.type === 'reading').map((entry) => entry.date)));
-    };
+    request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
@@ -361,7 +360,7 @@ window.ConsistencyDB = {
   addEntry,
   updateEntry,
   deleteEntry,
-  getReadingDatesInRange,
+  getEntriesInRange,
   getAllEntries,
   getSavedItems,
   addSavedItem,
