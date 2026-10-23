@@ -165,7 +165,8 @@ body {
   font-weight: 700;
 }
 
-/* A closed month's result under the gold day's number (or "Unres." if not final). */
+/* A closed month's result under the gold day's number, or "Unresolved month" when the month
+   is not final, wrapped onto two short lines ("Unresolved" / "month") to fit the cell. */
 .cal-day.cal-gold.cal-has-result {
   flex-direction: column;
   line-height: 1.1;
@@ -175,6 +176,15 @@ body {
   font-size: 0.65rem;
   font-weight: 700;
   pointer-events: none;
+}
+
+/* Sized so "Unresolved" stays inside a 42px cell (a 360px-wide phone). */
+.cal-result.cal-result-unresolved {
+  font-size: 0.48rem;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  text-align: center;
+  max-width: 100%;
 }
 
 .result-day-note {

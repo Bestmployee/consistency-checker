@@ -92,7 +92,8 @@ test('an unresolved completed gold cell does not show a number as if final', () 
   const summary = computeSummary({ ...build(spec), todayKey: '2026-10-31' });
   const cell = calendarResult(summary, '2026-10-31', '2026-10-31');
   assert.equal(cell.unresolved, true);
-  assert.equal(cell.label, 'Unresolved');
+  assert.equal(cell.text, 'Unresolved month');
+  assert.equal(cell.label, 'Unresolved month');
   assert.doesNotMatch(cell.text, /\d/);
 });
 

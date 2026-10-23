@@ -118,14 +118,15 @@
   }
 
   // The compact result shown in a completed month's gold calendar cell, under the day
-  // number: { text, unresolved }, or null when there is nothing to show (the month hasn't
-  // closed, or has no result). An unresolved month never shows its number as if final.
+  // number: { text, label, unresolved }, or null when there is nothing to show (the month
+  // hasn't closed, or has no result). An unresolved month shows "Unresolved month" instead
+  // of its number, so the number is never presented as final.
   function calendarResult(summary, dateKey, todayKey) {
     if (dateKey > todayKey) return null;
     const m = summary.months.find((month) => month.month === dateKey.slice(0, 7));
     if (!m) return null;
     return m.hasUnresolved
-      ? { text: 'Unres.', label: 'Unresolved', unresolved: true }
+      ? { text: 'Unresolved month', label: 'Unresolved month', unresolved: true }
       : { text: formatNumber(m.consistency), label: `Consistency ${formatNumber(m.consistency)}`, unresolved: false };
   }
 
@@ -179,7 +180,7 @@
 
     if (view.unresolved) {
       const warning = el('div', 'month-result-unresolved');
-      warning.appendChild(el('p', null, 'Unresolved — this result is not final.'));
+      warning.appendChild(el('p', null, 'Unresolved month — this result is not final.'));
       warning.appendChild(el('p', null,
         `These dates have a calendar mark that doesn't match their Gym data, so they are left out until corrected: ${view.unresolvedDates.join(', ')}. ` +
         'Correct them (they show "?" on the calendar) for the result to be final.'));
@@ -230,7 +231,7 @@
     const list = el('ul', 'month-result-list month-result-history');
     for (const h of view.history) {
       const item = el('li');
-      item.appendChild(el('strong', null, `${h.name}${h.unresolved ? ' (unresolved)' : ''}`));
+      item.appendChild(el('strong', null, `${h.name}${h.unresolved ? ' (unresolved month)' : ''}`));
       item.appendChild(el('span', null,
         ` — Consistency ${h.consistency} · Gym ${h.gymContribution} (avg ${h.gymAverage}) · Reading ${h.readingContribution} (avg ${h.readingAverage})`));
       list.appendChild(item);
