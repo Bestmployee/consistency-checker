@@ -1,49 +1,69 @@
 # Consistency Checker
 
-A personal habit-tracking web app (gym + reading consistency), used solely on one Android phone via "Add to Home Screen." No server, no login, no other users. All data lives in the phone's browser storage.
+A single-user habit-tracking web app for Gym and Reading consistency, designed as an installable Android PWA. No server, no login, no multi-user system. All real activity data lives in the browser's local storage and must never be committed to this public repository.
 
-## How I want you to work with me
+## How to work on this project
 
-- Before building anything new, confirm in plain English what you understand I want, and wait for my approval.
-- Once I approve a scope, stay strictly on it. Build it, verify it works, and finish it. Do not add features I did not ask for — not even small, obviously-safe ones. If something seems worth adding beyond the agreed scope, ask first.
-- Never decide an open question on my behalf. Ask me. I stay in control of every decision.
-- Only interrupt me proactively if there's a serious architectural problem or meaningful risk — explain it in plain English and get my approval before proceeding.
-- I have no coding background. Explain choices in plain English, and tell me exactly what I need to do to see changes running on my phone.
-- Prefer self-contained solutions over sending me to third-party sites/tools (e.g. generate placeholder assets with a script rather than pointing me to a generator website).
+- Before building anything new, confirm in plain English what the owner wants and wait for explicit approval.
+- Once a scope is approved, stay strictly inside it. Do not add unrequested features.
+- Never decide an open product question on the owner's behalf.
+- Raise serious architectural or data-safety risks clearly and wait for the owner's decision.
+- Explain implementation choices in plain English when communicating with the owner.
+- Prefer self-contained solutions over unnecessary third-party tools.
+- Never commit personal activity data, backup exports, private Linear content, secrets, personal identifiers, or local filesystem paths.
 
-## Build order (strictly sequential — do not combine or jump ahead)
+## Build history
 
-- **Stage 1 — complete:** Month calendar of all days. (Its original green/red tap cycle was replaced in Stage 4; see below.)
-- **Stage 2 — complete:** Per-day detail page (`detail.html?date=…`, opened by long-press). Gym (equipment rows with sets and reps) and Reading (book and pages), with shared saved equipment/books.
-- **Stage 3 — complete (NIC-16):** Equipment photos on Saved Equipment and in the equipment picker (JPEG, longest side 640px).
-- **Stage 4 — implemented on branch `bestmployee/nic-17-stage-4-calculation-engine` (NIC-17), pending owner review/merge:** monthly Consistency, Gym and Reading results shown on each month's gold result day. Rules below.
+- **Stage 1 — complete:** month calendar, local persistence, offline PWA behavior, export/import, and GitHub Pages deployment. Its original manual green tap behavior was superseded later.
+- **Stage 2 — complete:** per-day detail page, Gym entries (equipment/sets/reps), Reading entries (book/pages), shared saved equipment/books, edit/delete/archive lifecycle, and IndexedDB v2.
+- **Calendar redesign — complete:** Reading stripe derived from Reading entries; Stage 4 later made Gym green data-driven and left normal no-Gym taps as unmarked ↔ red.
+- **Stage 3 — complete:** optional equipment photos in Saved Equipment and Gym pickers; resized to JPEG with longest side 640px before IndexedDB storage; backup schema v4.
+- **Stage 4 — complete (NIC-17 / PR #11):** calendar-month Consistency, Gym, and Reading results shown on each month's gold result day. Deployed and verified on the production phone app.
+- **Post-Stage-4 usability — NIC-19:** public documentation cleanup and a read-only in-app scoring/streak reference.
 
-Specs: `docs/plan-stage1.md`, `docs/plan-stage2.md`.
+Public references:
+- `README.md`
+- `docs/development-history.md`
+- `docs/scoring-and-streaks.md`
+- `docs/plan-stage1.md`
+- `docs/plan-stage2.md`
 
 ## Stage 4 rules (owner-approved; do not regress)
 
-The code is the detailed reference: `js/summary-calc.js` (all scoring), `js/day-state.js` (calendar-day display, taps, Gym-save guard), `js/month-result-view.js` (result display). Results are always recalculated from stored data, never saved, so historical corrections propagate automatically.
+The code is the detailed executable reference:
+- `js/summary-calc.js` — scoring/calculation engine.
+- `js/day-state.js` — calendar-day display, taps, and Gym-save guard.
+- `js/month-result-view.js` — monthly result presentation.
 
-- **Tracking starts Oct 18, 2026.** Earlier dates are outside Stage 4: never scored, never break a streak, never get a "?".
-- **Calendar months.** The **final calendar day of every month is the exclusive result day**: always gold (future months too), not scored, no effect on streaks or the half-day count, and no Gym or Reading entry or edit. A normal tap on a gold day opens its result (detail page); it never changes a mark. Before the month closes the page only says the result isn't available yet; there is no live monthly score anywhere.
-- **Gym green is data-driven** from valid Gym entries; the app never writes green, and deleting a day's last Gym row clears any stored green. **Taps never create green.** The only tap cycle is **unmarked → red → unmarked**, on days with no Gym data and no stored green; other days ignore taps (no tap-to-repair of "?").
-- **Red means no Gym.** Red + Reading is a valid Reading-only half-day. A **Gym save (add or edit) on a red day is refused**; the owner removes red first.
-- **Reading is data-driven** from Reading entries (the calendar stripe); there is no manual Reading mark.
-- **Integrity "?"** (from Oct 18 on): Gym data on a red day, or a stored green with no Gym data. Such dates are excluded from everything (no count, no streak advance or break) until the data is corrected. A month containing one is shown as **"Unresolved month"**, never as a final number.
-- **Consistency per date:** Gym + Reading = 1, one of them = 0.5, neither = 0 (an immediate break). Up to 3 consecutive half-days survive; the 4th breaks. Only the streak surviving to the month's last scored day counts toward that month; the carried streak continues across months and across years.
-- **Gym:** a date's value is its single highest sets × reps row (never summed). **Reading:** distinct books that date (pages are not used). Each has a Contribution, an average per active day, and an active-day count; no activity = 0.
-- **Comparisons and history stay within a calendar year:** each month compares with the previous month (higher / lower / unchanged) except January; history shows that year's months up to the selected one. No grades, thresholds or combined scores.
-- **No separate Summary page or button** — the gold day is the only monthly-summary entry point.
-- **No IndexedDB schema or backup schema change** for Stage 4 (DB version 2, backup version 4).
+Results are recalculated from stored source data rather than persisted as summary records, so historical corrections propagate automatically.
 
-## Architecture decisions (locked in, apply to all future stages)
+- **Tracking starts 2026-10-18.** Earlier dates are outside Stage 4: never scored, never break a streak, never get a `?`.
+- **Calendar months.** The final calendar day of every month is the exclusive gold result day: always gold (future months too), not scored, no effect on streaks or the half-day count, and no Gym/Reading entry or edit.
+- A normal tap on a gold day opens its result. Before the month closes, the page only says the result is not available yet; there is no live monthly score elsewhere.
+- **Gym green is data-driven** from valid Gym entries. The app never writes green from normal taps. The only normal no-Gym tap cycle is **unmarked → red → unmarked**.
+- **Red means no Gym.** Red + Reading is a valid Reading-only half-day. A Gym save (add or edit) on a red day is refused until red is removed.
+- **Reading is data-driven** from Reading entries and is shown as a calendar stripe.
+- **Integrity `?`** on tracked dates: Gym data + red, or stored green + no Gym. Unresolved dates are excluded from scoring/streak progression until corrected. A completed month containing unresolved dates displays **Unresolved month**.
+- **Consistency per date:** Gym + Reading = 1, one activity = 0.5, neither = 0 (immediate break).
+- Up to 3 consecutive half-days survive; the 4th breaks the streak and is not counted.
+- A full day resets the half-day counter. After a break, the next qualifying activity starts a new streak.
+- Only the streak surviving to the month's last scored day contributes to that month's result.
+- The carried streak can cross result days, months, and year boundaries.
+- **Gym metric:** daily value is the single highest sets × reps row. Monthly Gym Contribution sums daily maxima on qualifying Gym dates in the surviving streak; Average Gym Performance = contribution ÷ Gym active days.
+- **Reading metric:** daily units are distinct books engaged that date. Pages are not used for Stage 4 growth. Monthly Reading Contribution sums daily distinct-book units on qualifying Reading dates in the surviving streak; Average Reading Breadth = contribution ÷ Reading active days.
+- **Comparisons/history:** same calendar year only; January does not compare against December. Carried streak continuity is independent of the year-history reset.
+- **No separate Summary page/button.** The gold result day is the monthly-summary entry point.
+- **No DB or backup schema change** for Stage 4: IndexedDB v2, backup schema v4.
 
-- **No build step.** Plain HTML/CSS/JS only — no framework, no bundler. Deployed by uploading files directly to GitHub Pages via GitHub's web UI (no git/command line required).
-- **Storage: IndexedDB**, not localStorage — chosen from Stage 1 because Stage 3's equipment photos need blob storage. Database `consistencyCheckerDB`, object store `days` keyed by local `"YYYY-MM-DD"` date strings (not UTC-shifted `Date.toISOString()`). Future stores (per-day activity logs, photos) should key off the same date-string convention so they can be added as additive IndexedDB migrations, not rewrites.
-- **Persistent storage:** `navigator.storage.persist()` is requested on load so Android is less likely to evict data under storage pressure.
-- **Export & Import** both ship as real, working features (not deferred): Export downloads a JSON backup (schema version 4: `{ schemaVersion, exportedAt, days, entries, savedItems }`, with equipment photos included inline in the same file; versions 1–3 still import); Import replaces all current data with a chosen backup file, after a confirmation prompt. Buttons are deliberately plain/unstyled until a styling pass is explicitly requested.
-- **Marking interaction:** a tap marks a no-Gym day red or unmarks it (see Stage 4 rules); a tap on a gold result day opens it. Long-press opens the detail page and must not also trigger a tap or Android's native text-selection menu.
-- **Legibility rule (hard constraint):** the day number must always be visible as text — bright green/red fills use **black bold** numbers, never a colored block with no number.
-- **Service worker caching:** `CACHE_NAME` in `sw.js` must be bumped on every deploy, or updates won't reach the phone (stale cache is the standard PWA gotcha here).
-- **Local testing:** Node.js is available — use `npx serve` from the project folder to test on `localhost` before uploading to GitHub Pages.
-- **Automated tests:** run `node --test` from the project folder (Node's built-in runner, nothing to install). The `tests/` folder is not needed on GitHub Pages.
+## Architecture decisions
+
+- **No build step.** Plain HTML/CSS/JS only — no framework or bundler.
+- **Storage:** IndexedDB, using local `YYYY-MM-DD` date keys rather than UTC-shifted ISO timestamps.
+- **Persistent storage:** `navigator.storage.persist()` is requested so Android is less likely to evict data under storage pressure.
+- **Export & Import:** production features. Backup schema v4 is `{ schemaVersion, exportedAt, days, entries, savedItems }`; equipment photos are included inline. Older supported backup versions remain importable.
+- **Marking interaction:** eligible no-Gym dates toggle unmarked ↔ red. A gold result day opens its result. Long-press opens the detail page and must not also trigger a normal tap.
+- **Legibility:** the day number must always remain visible as text.
+- **Service worker caching:** bump `CACHE_NAME` for every deployed runtime change so installed phones receive the new app shell.
+- **Deployment:** GitHub Pages deploys the public app from `main`.
+- **Local testing:** Node.js is available; `npx serve` can be used for localhost browser checks.
+- **Automated tests:** run `node --test` from the project folder.

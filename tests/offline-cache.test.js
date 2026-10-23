@@ -38,7 +38,7 @@ test('every cached file exists', () => {
 
 test('the cache name is bumped past the earlier caches', () => {
   assert.ok(cacheName.startsWith('consistency-checker-'));
-  for (const old of ['consistency-checker-nic-16', 'consistency-checker-nic-17']) {
+  for (const old of ['consistency-checker-nic-16', 'consistency-checker-nic-17', 'consistency-checker-nic-17-b']) {
     assert.notEqual(cacheName, old);
   }
 });

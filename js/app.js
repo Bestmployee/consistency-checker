@@ -87,6 +87,19 @@ importInput.addEventListener('change', async () => {
   }
 });
 
+// Scoring reference: a read-only panel (a native <dialog>, so Escape closes it, focus stays
+// inside, and the calendar behind can't be tapped). It never reads or writes app data.
+const scoringDialog = document.getElementById('scoring-dialog');
+document.getElementById('scoring-btn').addEventListener('click', () => {
+  if (!scoringDialog.open) scoringDialog.showModal();
+});
+document.getElementById('scoring-close').addEventListener('click', () => scoringDialog.close());
+// A tap on the dimmed area outside the panel closes it. The panel fills the dialog, so only
+// the backdrop reports the dialog itself as the target.
+scoringDialog.addEventListener('click', (event) => {
+  if (event.target === scoringDialog) scoringDialog.close();
+});
+
 StoragePermission.requestPersistentStorage(showBanner);
 
 if ('serviceWorker' in navigator) {
