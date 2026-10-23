@@ -25,12 +25,14 @@ async function getStoredReadingEntry(dateKey, expected) {
 
 // Every add creates a new, separate reading entry.
 async function addReadingEntry(dateKey, { bookItemId, pages }) {
+  EntryUtils.checkEntriesAllowed(dateKey);
   await EntryUtils.checkItemsNotDeleted(bookItemId);
   await ConsistencyDB.addEntry({ date: dateKey, type: 'reading', bookItemId, pages });
 }
 
 // An entry using a permanently deleted book is read-only, and an entry can't be changed to use one.
 async function updateReadingEntry(dateKey, expected, { bookItemId, pages }) {
+  EntryUtils.checkEntriesAllowed(dateKey);
   const entry = await getStoredReadingEntry(dateKey, expected);
   await EntryUtils.checkItemsNotDeleted(expected.bookItemId, bookItemId);
   await ConsistencyDB.updateEntry({ ...entry, bookItemId, pages });

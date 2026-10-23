@@ -29,9 +29,16 @@ async function checkItemsNotDeleted(...ids) {
   }
 }
 
+// Throws if activity can't be entered on the date: a month's final day is its result day
+// (js/day-state.js). Guards saves even from a page opened before the rule applied.
+function checkEntriesAllowed(dateKey) {
+  if (!DayState.entriesAllowed(dateKey)) throw new Error("Activity can't be added on a month's result day.");
+}
+
 window.EntryUtils = {
   countLabel,
   parsePositiveWholeNumber,
   compareOldestFirst,
   checkItemsNotDeleted,
+  checkEntriesAllowed,
 };

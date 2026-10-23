@@ -1,6 +1,7 @@
 // Renders a month calendar grid into a container element, with prev/next
 // navigation and today-highlighting. Delegates tap/long-press detection to
-// Gestures (js/gestures.js) and day-state reads/writes to ConsistencyDB (js/db.js).
+// Gestures (js/gestures.js), storage reads to ConsistencyDB (js/db.js), and what each
+// day shows (green / red / Reading / "?" / gold result day) to DayState (js/day-state.js).
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTH_LABELS = [
@@ -10,8 +11,6 @@ const MONTH_LABELS = [
 
 function createCalendar(container, { onDayTap, onDayLongPress }) {
   let currentYear, currentMonth; // month is 0-indexed
-  const today = new Date();
-  const todayKey = ConsistencyDB.toDateKey(today);
 
   const header = document.createElement('div');
   header.className = 'cal-header';
@@ -56,24 +55,51 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
     renderMonth();
   }
 
-  async function renderMonth() {
-    label.textContent = `${MONTH_LABELS[currentMonth]} ${currentYear}`;
-    grid.innerHTML = '';
+  // The compact result for the gold day ending on monthEndKey, or null if that month hasn't
+  // closed (or has no result). Only a closed month needs the whole history, which every
+  // result depends on (streaks carry across months), so only then is everything read.
+  async function loadMonthResult(monthEndKey, todayKey) {
+    if (!DayState.isExclusiveResultDay(monthEndKey) || monthEndKey > todayKey) return null;
+    const [days, entries] = await Promise.all([ConsistencyDB.getAllDays(), ConsistencyDB.getAllEntries()]);
+    const summary = SummaryCalc.computeSummary({ days, entries, todayKey });
+    return MonthResultView.calendarResult(summary, monthEndKey, todayKey);
+  }
 
-    const firstOfMonth = new Date(currentYear, currentMonth, 1);
+  // Counts renders so a slower, older render never replaces a newer one.
+  let renderCount = 0;
+
+  // Reads the month from storage and draws it. The new grid is built off-screen and
+  // swapped in once complete, so redraws (after every tap, and on Back) don't flicker.
+  async function renderMonth() {
+    const render = ++renderCount;
+    const year = currentYear;
+    const month = currentMonth;
+    // Re-read today on every render so the "today" ring stays current.
+    const todayKey = ConsistencyDB.toDateKey(new Date());
+
+    const firstOfMonth = new Date(year, month, 1);
     const startWeekday = firstOfMonth.getDay(); // 0 = Sunday
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
 
     const totalCells = Math.ceil((startWeekday + daysInMonth) / 7) * 7;
 
-    const monthStartKey = ConsistencyDB.toDateKey(new Date(currentYear, currentMonth, 1));
-    const monthEndKey = ConsistencyDB.toDateKey(new Date(currentYear, currentMonth, daysInMonth));
-    const [statuses, readingDates] = await Promise.all([
+    const monthStartKey = ConsistencyDB.toDateKey(new Date(year, month, 1));
+    const monthEndKey = ConsistencyDB.toDateKey(new Date(year, month, daysInMonth));
+    const [statuses, entries, monthResult] = await Promise.all([
       ConsistencyDB.getDaysInRange(monthStartKey, monthEndKey),
-      ConsistencyDB.getReadingDatesInRange(monthStartKey, monthEndKey),
+      ConsistencyDB.getEntriesInRange(monthStartKey, monthEndKey),
+      loadMonthResult(monthEndKey, todayKey),
     ]);
+    if (render !== renderCount) return;
 
+    const entriesByDate = new Map();
+    for (const entry of entries) {
+      if (!entriesByDate.has(entry.date)) entriesByDate.set(entry.date, []);
+      entriesByDate.get(entry.date).push(entry);
+    }
+
+    const cells = document.createDocumentFragment();
     for (let i = 0; i < totalCells; i++) {
       const dayNum = i - startWeekday + 1;
       const cell = document.createElement('div');
@@ -85,14 +111,28 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
         cell.className = 'cal-cell cal-filler';
         cell.textContent = dayNum - daysInMonth;
       } else {
-        const dateKey = ConsistencyDB.toDateKey(new Date(currentYear, currentMonth, dayNum));
-        const status = statuses[dateKey]; // undefined | "green" | "red"
-        cell.className = 'cal-cell cal-day' + (status ? ` cal-${status}` : '');
+        const dateKey = ConsistencyDB.toDateKey(new Date(year, month, dayNum));
+        const look = DayState.describeDay(dateKey, statuses[dateKey], entriesByDate.get(dateKey) || []);
+        cell.className = 'cal-cell cal-day' + (look.color ? ` cal-${look.color}` : '');
         if (dateKey === todayKey) cell.classList.add('cal-today');
         // Reading marker: shown if the day has any Reading entry, independent of the Gym colour.
-        if (readingDates.has(dateKey)) cell.classList.add('cal-reading');
+        if (look.reading) cell.classList.add('cal-reading');
+        // "?": stored mark and Gym data disagree; the date is left out of scoring until corrected.
+        if (look.unresolved) cell.classList.add('cal-unresolved');
+        // A month's final day is its result day (no activity), always shown gold.
+        if (look.resultDay) cell.classList.add('cal-result-day');
+        if (look.gold) cell.classList.add('cal-gold');
         cell.textContent = String(dayNum);
         cell.dataset.date = dateKey;
+        // Once the month has closed, its gold day also shows the result under the number.
+        if (look.resultDay && monthResult) {
+          const result = document.createElement('span');
+          result.className = 'cal-result' + (monthResult.unresolved ? ' cal-result-unresolved' : '');
+          result.textContent = monthResult.text;
+          cell.appendChild(result);
+          cell.classList.add('cal-has-result');
+          cell.setAttribute('aria-label', `${dayNum}, ${monthResult.label}`);
+        }
 
         Gestures.attach(cell, {
           onTap: () => onDayTap(dateKey, cell),
@@ -100,21 +140,16 @@ function createCalendar(container, { onDayTap, onDayLongPress }) {
         });
       }
 
-      grid.appendChild(cell);
+      cells.appendChild(cell);
     }
-  }
-
-  // Updates a single cell's Gym colour without re-rendering the whole grid
-  // (the Reading marker is left as it is).
-  function setCellStatus(cell, status) {
-    cell.classList.remove('cal-green', 'cal-red');
-    if (status) cell.classList.add(`cal-${status}`);
+    label.textContent = `${MONTH_LABELS[month]} ${year}`;
+    grid.replaceChildren(cells);
   }
 
   const now = new Date();
   goToMonth(now.getFullYear(), now.getMonth());
 
-  return { setCellStatus, refresh: renderMonth };
+  return { refresh: renderMonth };
 }
 
 window.Calendar = { create: createCalendar };

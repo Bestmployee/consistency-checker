@@ -1,5 +1,6 @@
 // Per-day detail page (detail.html?date=YYYY-MM-DD): shows the selected date and the
-// Gym (js/gym-section.js) and Reading (js/reading-section.js) sections.
+// Gym (js/gym-section.js) and Reading (js/reading-section.js) sections, or, on a month's
+// result day, a non-entry notice instead.
 // After a change, only the section that changed is redrawn from storage, so an
 // unfinished form in the other section keeps its typed values.
 
@@ -86,6 +87,52 @@ async function refreshDetailSection(kind, dateKey, notice) {
   detailSectionElements[kind] = fresh;
 }
 
+// A month's final day is its result day: it shows the month's result (js/month-result-view.js,
+// calculated fresh from all stored data) and has no Gym or Reading controls. Any activity
+// stored there earlier is listed read-only (kept, never deleted, and not counted).
+async function renderResultDayPage(container, dateKey, date) {
+  const todayKey = ConsistencyDB.toDateKey(new Date());
+  const [{ entries, nameFor }, allDays, allEntries] = await Promise.all([
+    loadDayData(dateKey),
+    ConsistencyDB.getAllDays(),
+    ConsistencyDB.getAllEntries(),
+  ]);
+  const summary = SummaryCalc.computeSummary({ days: allDays, entries: allEntries, todayKey });
+  const result = MonthResultView.render(MonthResultView.buildMonthView(summary, dateKey, todayKey));
+
+  const month = date.toLocaleDateString('en-US', { month: 'long' });
+  const section = document.createElement('section');
+  section.className = 'detail-section result-day-section';
+  const note = document.createElement('p');
+  note.className = 'result-day-note';
+  note.textContent = `This is ${month}'s result day. Gym and Reading activity can't be added on a month's result day.`;
+  section.appendChild(note);
+
+  const lines = [];
+  for (const entry of entries.slice().sort(EntryUtils.compareOldestFirst)) {
+    if (entry.type === 'gym') {
+      for (const row of entry.equipment || []) lines.push(`Gym — ${GymSection.describeGymRow(nameFor(row.itemId), row)}`);
+    } else if (entry.type === 'reading') {
+      lines.push(`Reading — ${ReadingSection.describeReadingEntry(nameFor(entry.bookItemId), entry)}`);
+    }
+  }
+  if (lines.length > 0) {
+    const intro = document.createElement('p');
+    intro.className = 'detail-empty';
+    intro.textContent = 'Activity saved on this date earlier (kept, but not counted):';
+    const list = document.createElement('ul');
+    list.className = 'detail-list';
+    for (const text of lines) {
+      const li = document.createElement('li');
+      li.className = 'detail-row';
+      li.textContent = text;
+      list.appendChild(li);
+    }
+    section.append(intro, list);
+  }
+  container.replaceChildren(result, section);
+}
+
 async function renderDetailPage() {
   const heading = document.getElementById('detail-date');
   const container = document.getElementById('detail');
@@ -98,11 +145,26 @@ async function renderDetailPage() {
   }
   heading.textContent = formatDateHeading(date);
 
+  if (!DayState.entriesAllowed(dateKey)) {
+    await renderResultDayPage(container, dateKey, date);
+    return;
+  }
+
   for (const kind of Object.keys(DETAIL_SECTIONS)) {
     detailSectionElements[kind] = await buildDetailSection(kind, dateKey, null);
   }
   container.innerHTML = '';
   container.append(detailSectionElements.gym, detailSectionElements.reading);
 }
+
+// A result day's page restored by Back (back/forward cache) may show a result from before
+// other days were edited; recalculate it from storage.
+window.addEventListener('pageshow', (event) => {
+  const dateKey = new URLSearchParams(window.location.search).get('date');
+  const date = parseDateKey(dateKey);
+  if (event.persisted && date && !DayState.entriesAllowed(dateKey)) {
+    renderResultDayPage(document.getElementById('detail'), dateKey, date);
+  }
+});
 
 renderDetailPage();
